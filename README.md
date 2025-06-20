@@ -1,9 +1,6 @@
-<div align="center">
-# AI Voice Assistant & Teleprompter
-</div>
+<img width="233" alt="logoaitlp" src="https://github.com/user-attachments/assets/496d90ee-2539-4af3-a251-c2e9cff621b4" />
 
 **AI Voice Assistant & Teleprompter** — это современное веб-приложение, предназначенное для транскрипции речи в реальном времени, интеллектуального анализа диалога и вывода ответов от нейросети в формате телесуфлера. Приложение работает полностью на стороне клиента (в браузере), обеспечивая непрерывную запись голоса и асинхронную обработку запросов к **OpenAI API**.
-![Gemini_Generated_Image_1c3kcp1c3kcp1c3k](https://github.com/user-attachments/assets/47abe58f-9503-451f-a16d-7adfbaf31357)
 
 ---
 
@@ -43,6 +40,10 @@
 * **Рендеринг контента:**
     * **[KaTeX](https://katex.org/):** Высокопроизводительная библиотека для отображения математических формул в формате LaTeX.
     * **[highlight.js](https://highlightjs.org/):** Библиотека для автоматической подсветки синтаксиса в блоках кода.
+
+
+![Gemini_Generated_Image_1c3kcp1c3kcp1c3k](https://github.com/user-attachments/assets/47abe58f-9503-451f-a16d-7adfbaf31357)
+
 
 ---
 
