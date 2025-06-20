@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Телесуфлер</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    <!-- CORRECTED: Libraries for Formulas (KaTeX) and Code Highlighting (highlight.js) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" xintegrity="sha384-n8MVd4RsNIU0KOVEMeaPoSNefnRjXqbGAUGGuJmuYGAdaOKdUZ6SPEtBVFuhNeHc" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" xintegrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzUOEleOLALmuqehneUG+vnGctmUb0ZY0l8" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" xintegrity="sha384-+VBxd3r6XgURycqtZ117nYw44OOcIax56Z4dCRWbxyPt0Koah1uHoK0o4+/RRE05" crossorigin="anonymous"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+    <style>
+        body { background-color: #111827; color: #F9FAFB; font-family: 'Roboto', sans-serif; overflow: hidden; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; }
+        #text-container { flex-grow: 1; overflow-y: hidden; padding: 5% 10%; mask-image: linear-gradient(transparent 0%, black 20%, black 80%, transparent 100%); -webkit-mask-image: linear-gradient(transparent 0%, black 20%, black 80%, transparent 100%); transition: transform 0.3s ease; }
+        #teleprompter-text { line-height: 1.5; text-align: center; font-weight: 700; transition: transform 0.3s ease; }
+        #teleprompter-text pre { margin: 2rem auto; border-radius: 8px; text-align: left; font-size: 0.6em; white-space: pre-wrap; word-wrap: break-word; }
+        #teleprompter-text code.hljs { padding: 1.5em; }
+        #controls { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background-color: rgba(31, 41, 55, 0.8); backdrop-filter: blur(5px); padding: 10px 20px; border-radius: 12px; display: flex; align-items: center; gap: 15px; z-index: 100; opacity: 0.1; transition: opacity 0.3s ease; }
+        body:hover #controls { opacity: 1; }
+        .control-btn { background: none; border: none; color: #D1D5DB; cursor: pointer; padding: 5px; transition: color 0.2s; }
+        .control-btn:hover { color: white; }
+        .control-btn svg { width: 24px; height: 24px; }
+        #speed-display, #font-size-display { font-size: 16px; font-weight: bold; color: white; min-width: 40px; text-align: center; }
+    </style>
+</head>
+<body>
+
+    <div id="text-container">
+        <div id="teleprompter-text">Ожидание текста...</div>
+    </div>
+
+    <div id="controls">
+        <button id="flip-btn" class="control-btn" title="Зеркальное отображение"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M10 3.5a.75.75 0 01.75.75v11.5a.75.75 0 01-1.5 0V4.25A.75.75 0 0110 3.5z" /><path d="M4 10a.75.75 0 01.75-.75h2.5a.75.75 0 010 1.5h-2.5A.75.75 0 014 10zM10.75 10a.75.75 0 000-1.5h2.5a.75.75 0 000 1.5h-2.5z" /></svg></button>
+        <button id="font-down-btn" class="control-btn" title="Уменьшить шрифт"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 10a.75.75 0 01.75-.75h10.5a.75.75 0 010 1.5H4.75A.75.75 0 014 10z" clip-rule="evenodd" /></svg></button>
+        <span id="font-size-display">5.5</span>
+        <button id="font-up-btn" class="control-btn" title="Увеличить шрифт"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" /></svg></button>
+        <button id="slow-down-btn" class="control-btn" title="Медленнее"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M18 12H6" /></svg></button>
+        <span id="speed-display">10</span>
+        <button id="speed-up-btn" class="control-btn" title="Быстрее"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m6-6H6" /></svg></button>
+        <button id="play-pause-btn" class="control-btn" title="Пауза">
+            <svg id="pause-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25v13.5m-7.5-13.5v13.5" /></svg>
+            <svg id="play-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="display: none;"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" /></svg>
+        </button>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const textContainer = document.getElementById('text-container');
+        const teleprompterText = document.getElementById('teleprompter-text');
+        const playPauseBtn = document.getElementById('play-pause-btn');
+        const slowDownBtn = document.getElementById('slow-down-btn');
+        const speedUpBtn = document.getElementById('speed-up-btn');
+        const speedDisplay = document.getElementById('speed-display');
+        const fontUpBtn = document.getElementById('font-up-btn');
+        const fontDownBtn = document.getElementById('font-down-btn');
+        const fontSizeDisplay = document.getElementById('font-size-display');
+        const flipBtn = document.getElementById('flip-btn');
+        const pauseIcon = document.getElementById('pause-icon');
+        const playIcon = document.getElementById('play-icon');
+
+        // --- State ---
+        let scrollSpeed = 0.5;
+        let fontSize = 5.5; // vmin units
+        let isScrolling = true;
+        let isFlipped = false;
+        
+        const channel = new BroadcastChannel('teleprompter_channel');
+
+        function updateDisplays() {
+            speedDisplay.textContent = (scrollSpeed * 20).toFixed(0);
+            fontSizeDisplay.textContent = fontSize.toFixed(1);
+        }
+
+        function scroll() {
+            if (isScrolling && textContainer.scrollHeight > textContainer.clientHeight) {
+                textContainer.scrollTop += scrollSpeed;
+            }
+            requestAnimationFrame(scroll);
+        }
+        
+        function escapeHtml(unsafe) {
+            return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+
+        function renderSpecialContent() {
+             const rawHtml = teleprompterText.innerHTML;
+             const parts = rawHtml.split('```');
+             let finalHtml = '';
+             for (let i = 0; i < parts.length; i++) {
+                 if (i % 2 === 0) {
+                     finalHtml += parts[i];
+                 } else {
+                     let codeBlock = parts[i];
+                     let langMatch = codeBlock.match(/^(\w+)\n/);
+                     let lang = langMatch ? langMatch[1] : 'plaintext';
+                     let code = langMatch ? codeBlock.substring(lang.length + 1) : codeBlock;
+                     finalHtml += `<pre><code class="language-${lang}">${escapeHtml(code)}</code></pre>`;
+                 }
+             }
+             teleprompterText.innerHTML = finalHtml;
+
+            renderMathInElement(teleprompterText, {
+                delimiters: [ {left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false} ],
+                throwOnError: false
+            });
+            document.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+        }
+        
+        channel.onmessage = (event) => {
+            const msg = event.data;
+            switch(msg.type) {
+                case 'start':
+                    teleprompterText.innerHTML = '';
+                    textContainer.scrollTop = 0;
+                    isScrolling = true;
+                    pauseIcon.style.display = 'block';
+                    playIcon.style.display = 'none';
+                    break;
+                case 'token':
+                    teleprompterText.appendChild(document.createTextNode(msg.data));
+                    break;
+                case 'end':
+                    renderSpecialContent();
+                    break;
+            }
+        };
+
+        playPauseBtn.addEventListener('click', () => {
+            isScrolling = !isScrolling;
+            pauseIcon.style.display = isScrolling ? 'block' : 'none';
+            playIcon.style.display = isScrolling ? 'none' : 'block';
+        });
+
+        slowDownBtn.addEventListener('click', () => { scrollSpeed = Math.max(0.1, scrollSpeed - 0.1); updateDisplays(); });
+        speedUpBtn.addEventListener('click', () => { scrollSpeed += 0.1; updateDisplays(); });
+        fontDownBtn.addEventListener('click', () => { fontSize = Math.max(1, fontSize - 0.5); teleprompterText.style.fontSize = `${fontSize}vmin`; updateDisplays(); });
+        fontUpBtn.addEventListener('click', () => { fontSize += 0.5; teleprompterText.style.fontSize = `${fontSize}vmin`; updateDisplays(); });
+        flipBtn.addEventListener('click', () => {
+            isFlipped = !isFlipped;
+            textContainer.style.transform = isFlipped ? 'scaleX(-1)' : 'none';
+            teleprompterText.style.transform = isFlipped ? 'scaleX(-1)' : 'none';
+        });
+        
+        window.onload = () => {
+            teleprompterText.style.fontSize = `${fontSize}vmin`;
+            updateDisplays();
+            requestAnimationFrame(scroll);
+        };
+    </script>
+</body>
+</html>

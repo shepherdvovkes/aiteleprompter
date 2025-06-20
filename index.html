@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-time Transcription & AI Assistant (Scrolling Fixed)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- CORRECTED: integrity attribute -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" xintegrity="sha384-n8MVd4RsNIU0KOVEMeaPoSNefnRjXqbGAUGGuJmuYGAdaOKdUZ6SPEtBVFuhNeHc" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" xintegrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzUOEleOLALmuqehneUG+vnGctmUb0ZY0l8" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" xintegrity="sha384-+VBxd3r6XgURycqtZ117nYw44OOcIax56Z4dCRWbxyPt0Koah1uHoK0o4+/RRE05" crossorigin="anonymous"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .pulse { animation: pulse-animation 2s infinite; }
+        @keyframes pulse-animation { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+        .q-tag { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 6px; margin-right: 8px; display: inline-flex; align-items: center; vertical-align: middle; text-transform: uppercase; }
+        .tag-technical { background-color: #2563EB; color: #DBEAFE; } .tag-general { background-color: #16A34A; color: #DCFCE7; } .tag-personal { background-color: #9333EA; color: #F3E8FF; } .tag-financial { background-color: #D97706; color: #FFFBEB; }
+        #progress-bar { position: fixed; bottom: 0; left: 0; width: 100%; height: 4px; background-color: rgba(63, 131, 248, 0.2); display: none; z-index: 9999; }
+        #progress-bar-inner { width: 100%; height: 100%; background: linear-gradient(90deg, rgba(59,130,246,0) 0%, rgba(59,130,246,1) 50%, rgba(59,130,246,0) 100%); animation: progress-animation 2s linear infinite; }
+        @keyframes progress-animation { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+        #settings-modal { background-color: rgba(17, 24, 39, 0.8); backdrop-filter: blur(4px); }
+        .ai-response-content pre { margin: 1em 0; border-radius: 8px; font-size: 0.9em; }
+        .ai-response-content code.hljs { padding: 1em; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200 flex items-center justify-center min-h-screen p-4 sm:p-6">
+    <div class="w-full h-full bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6 flex flex-col">
+        <!-- Header -->
+        <header class="text-center flex-shrink-0 relative"> <h1 class="text-3xl md:text-4xl font-bold text-white">AI Voice Assistant</h1> <p class="text-gray-400 mt-2">Speak, get transcribed, and ask questions with context.</p> <button id="settings-button" class="absolute top-0 right-0 p-2 text-gray-400 hover:text-white transition-colors"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg></button> </header>
+        <!-- Controls -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-center bg-gray-900/50 p-4 rounded-lg flex-shrink-0">
+            <div class="flex items-center justify-center md:justify-start space-x-3"> <button id="startButton" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition-colors w-full md:w-auto">Start</button> <button id="stopButton" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors w-full md:w-auto" disabled>Stop</button> </div>
+            <div id="status" class="flex items-center justify-center text-gray-400 space-x-2"> <div id="status-light" class="w-3 h-3 rounded-full bg-gray-500"></div> <span id="status-text">Stopped</span> </div>
+            <div class="flex items-center justify-center md:justify-end">
+                <label for="language" class="text-sm font-medium mr-3">Language:</label>
+                <select id="language" class="bg-gray-700 border border-gray-600 rounded-md p-2 text-gray-200 focus:ring-2 focus:ring-blue-500">
+                    <option value="auto">Авто</option>
+                    <option value="ru-RU">Русский</option>
+                    <option value="en-US">English</option>
+                </select>
+            </div>
+        </div>
+        <!-- Panes... (unchanged) -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 relative flex-grow min-h-0"> <div class="bg-gray-900/50 p-4 rounded-lg space-y-4 flex flex-col"> <h2 class="text-xl font-semibold text-white border-b border-gray-700 pb-2 flex-shrink-0">Live Transcription</h2> <div id="interim-transcript" class="h-24 p-2 text-gray-400 italic flex-shrink-0">...</div> <h3 class="text-lg font-semibold text-white border-b border-gray-700 pb-2 flex-shrink-0">Conversation Log</h3> <div id="final-transcript" class="flex-grow overflow-y-auto p-2 space-y-2 text-gray-200"></div> </div> <div class="bg-gray-900/50 p-4 rounded-lg flex flex-col"> <h2 class="text-xl font-semibold text-white border-b border-gray-700 pb-2 flex-shrink-0">AI Assistant Response</h2> <div id="ai-response-area" class="flex-grow overflow-y-auto p-2 space-y-4 text-gray-300"> <div id="ai-placeholder" class="text-gray-500 text-center pt-10"> <svg class="mx-auto h-12 w-12 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg> <p class="mt-2 text-sm">Answers will appear here. Set your API key in settings.</p> </div> </div> </div> </div>
+    </div>
+    <div id="progress-bar"><div id="progress-bar-inner"></div></div>
+    <div id="settings-modal" class="fixed inset-0 z-50 items-center justify-center hidden"> <div class="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md space-y-4"> <h2 class="text-2xl font-bold text-white">Настройки</h2> <div> <label for="modal-apiKey-input" class="block text-sm font-medium text-gray-300 mb-2">OpenAI API Key:</label> <input type="password" id="modal-apiKey-input" class="w-full bg-gray-900 border border-gray-600 rounded-md p-2 text-gray-200 focus:ring-2 focus:ring-blue-500" placeholder="sk-..."> <p class="text-xs text-gray-500 mt-2">Ваш ключ хранится только в браузере и никуда не отправляется.</p> </div> <div class="flex justify-end space-x-4"> <button id="modal-cancel-button" class="px-4 py-2 rounded-md text-gray-300 hover:bg-gray-700 transition-colors">Отмена</button> <button id="modal-save-button" class="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors">Сохранить</button> </div> </div> </div>
+
+<script type="module">
+    // --- State, DOM refs, Speech Recognition... (unchanged) ---
+    const startButton = document.getElementById('startButton'), stopButton = document.getElementById('stopButton'); const statusLight = document.getElementById('status-light'), statusText = document.getElementById('status-text'); const languageSelect = document.getElementById('language'); const interimTranscriptDiv = document.getElementById('interim-transcript'), finalTranscriptDiv = document.getElementById('final-transcript'); const aiResponseArea = document.getElementById('ai-response-area'), aiPlaceholder = document.getElementById('ai-placeholder'); const progressBar = document.getElementById('progress-bar'); const settingsModal = document.getElementById('settings-modal'); const settingsButton = document.getElementById('settings-button'); const modalApiKeyInput = document.getElementById('modal-apiKey-input'); const modalSaveButton = document.getElementById('modal-save-button'); const modalCancelButton = document.getElementById('modal-cancel-button');
+    
+    let openAIApiKey = localStorage.getItem('openai_api_key') || ''; 
+
+    let rawConversationBuffer = []; const analysisQueue = []; let isProcessingQueue = false; 
+    let silenceTimer = null; 
+    let periodicTimer = null;
+    const SILENCE_THRESHOLD = 3500; 
+    const PERIODIC_THRESHOLD = 5000;
+
+    let teleprompterWindow = null;
+    const channel = new BroadcastChannel('teleprompter_channel');
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition; let recognition; let isListening = false;
+    if (!SpeechRecognition) { statusText.textContent = "Browser not supported."; startButton.disabled = true; stopButton.disabled = true; } else { recognition = new SpeechRecognition(); recognition.continuous = true; recognition.interimResults = true; }
+    
+    // --- Queue Processing & Scheduling... (unchanged) ---
+    const processQueue = async () => { if (isProcessingQueue || analysisQueue.length === 0) return; isProcessingQueue = true; progressBar.style.display = 'block'; const textToAnalyze = analysisQueue.shift(); try { const punctuatedText = await punctuateText(textToAnalyze); displayPunctuatedLog(punctuatedText); const potentialQuestions = await identifyQuestionsInText(punctuatedText); if (!potentialQuestions || potentialQuestions.length === 0) throw new Error("No questions found"); const prioritized = await prioritizeQuestions(punctuatedText, potentialQuestions.map(q => q.text)); if (!prioritized || !prioritized.main_question) throw new Error("No main question prioritized"); if (aiPlaceholder) aiPlaceholder.style.display = 'none'; if (prioritized.main_question) { const category = await categorizeQuestion(prioritized.main_question, punctuatedText); updateLogWithTag(prioritized.main_question, category); await getOpenAIResponse(prioritized.main_question, `Главный вопрос (${category})`); } if (prioritized.secondary_question) { const category = await categorizeQuestion(prioritized.secondary_question, punctuatedText); updateLogWithTag(prioritized.secondary_question, category); await getOpenAIResponse(prioritized.secondary_question, `Дополнительный вопрос (${category})`); } } catch (error) { console.log("Analysis pipeline notice:", error.message); } finally { isProcessingQueue = false; if (analysisQueue.length > 0) { processQueue(); } else { progressBar.style.display = 'none'; } } };
+    const scheduleAnalysis = () => { if (rawConversationBuffer.length === 0) return; analysisQueue.push(rawConversationBuffer.join(' ')); rawConversationBuffer = []; if (!isProcessingQueue) processQueue(); };
+    
+    // --- LLM Helpers... (unchanged) ---
+    const callOpenAINonStream = async (messages, model = 'gpt-4o-mini', needsJson = false) => { if (!openAIApiKey) throw new Error("OpenAI API key is not set."); const body = { model, messages, temperature: 0.2 }; if (needsJson) body.response_format = { "type": "json_object" }; const response = await fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openAIApiKey}` }, body: JSON.stringify(body) }); if (!response.ok) { const errorData = await response.json(); throw new Error(errorData.error.message || `API request failed`); } const data = await response.json(); const content = data.choices[0].message.content; return needsJson ? JSON.parse(content) : content; };
+    const punctuateText = (textBlock) => callOpenAINonStream([{role: 'system', content: 'You are a helpful editor. Correct the following text by adding punctuation (commas, periods, question marks) and capitalizing the beginning of sentences. Return only the corrected text, without any additional comments.'}, {role: 'user', content: textBlock}]);
+    const identifyQuestionsInText = async (textBlock) => { const prompt = `Your task is to identify all user questions in the text. If a question is a short phrase (e.g., "why?", "what do you think?"), you MUST combine it with the preceding sentence(s) that provide its context to form a complete, standalone question. For example, if the text is 'My car won't start. What should I do?', the extracted question must be 'My car won't start. What should I do?'. Return ONLY a valid JSON object with a key "potential_questions", which is an array of objects, each with a "text" key containing the full, contextual question. If no questions are found, return an empty array. TEXT: """${textBlock}"""`; const result = await callOpenAINonStream([{ role: 'user', content: prompt }], 'gpt-4o-mini', true); return result.potential_questions; };
+    const categorizeQuestion = async (question, context) => { const categories = ['Технический', 'Общий', 'Личный', 'Финансовый']; const prompt = `Categorize the question into one of: ${categories.join(', ')}. Use context. Return JSON with a "category" key.\n\nCONTEXT: """${context}"""\n\nQUESTION: "${question}"`; const result = await callOpenAINonStream([{ role: 'user', content: prompt }], 'gpt-4o-mini', true); return categories.includes(result.category) ? result.category : "Общий"; };
+    const prioritizeQuestions = (context, questions) => callOpenAINonStream([{role: 'user', content: `From context and questions, select one 'main_question' and one 'secondary_question'. Return JSON with these keys (values can be null).\n\nCONTEXT: """${context}"""\n\nQUESTIONS: ${JSON.stringify(questions)}`}],'gpt-4o-mini', true);
+    const getResponseLanguage = async (text) => { const prompt = `Analyze the text. Does it contain any Russian words? If yes, answer "Russian". If the text is purely in English or another non-Russian language, answer "English". Respond with a single word. TEXT: """${text}"""`; const result = await callOpenAINonStream([{ role: 'user', content: prompt }]); return result.toLowerCase().includes('russian') ? 'Russian' : 'English'; }
+
+    // --- Streaming Logic with Retry & Language Awareness ---
+    const getOpenAIResponse = async (question, title) => {
+        if (!openAIApiKey) throw new Error("OpenAI API key is not set.");
+        
+        const MAX_RETRIES = 3;
+        const responseElements = displayAIResponse("", title);
+        const contentElement = responseElements.content;
+        
+        const answerLanguage = await getResponseLanguage(question);
+        const languageInstruction = answerLanguage === 'Russian' ? 'Ваш ответ должен быть полностью на русском языке.' : 'Your response must be entirely in English.';
+
+        if (!teleprompterWindow || teleprompterWindow.closed) {
+            teleprompterWindow = window.open('teleprompter.html', 'teleprompterWindow', 'width=800,height=600,scrollbars=no,resizable=yes');
+            await new Promise(resolve => setTimeout(resolve, 150));
+        } else {
+            teleprompterWindow.focus();
+        }
+
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                if (attempt > 1) { contentElement.textContent = ''; }
+                channel.postMessage({ type: 'start' });
+                
+                const engineeredPrompt = `You are an expert software developer and machine learning engineer. Provide a concise, accurate answer to the question. ${languageInstruction}\n\nQuestion: ${question}`;
+                
+                const response = await fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openAIApiKey}` }, body: JSON.stringify({ model: 'gpt-4', messages: [{ role: 'user', content: engineeredPrompt }], stream: true }), });
+                if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+                    const parsedLines = lines.map(line => line.replace(/^data: /, '').trim()).filter(line => line !== '' && line !== '[DONE]').map(line => JSON.parse(line));
+                    for (const parsedLine of parsedLines) {
+                        const { choices } = parsedLine;
+                        const { delta } = choices[0];
+                        const { content } = delta;
+                        if (content) {
+                            contentElement.textContent += content;
+                            channel.postMessage({ type: 'token', data: content });
+                            // UPDATED: More robust auto-scrolling
+                            contentElement.scrollIntoView({ behavior: 'auto', block: 'end' });
+                        }
+                    }
+                }
+                break; // Success, exit retry loop
+            } catch (error) {
+                console.error(`Stream attempt ${attempt} failed: ${error.message}`);
+                if (attempt === MAX_RETRIES) { contentElement.textContent = `Ошибка соединения после ${MAX_RETRIES} попыток: ${error.message}`; }
+                else { await new Promise(res => setTimeout(res, 1000)); }
+            }
+        }
+        
+        channel.postMessage({ type: 'end' });
+        renderSpecialContent(contentElement);
+    };
+
+    // --- UI Update Functions (unchanged) ---
+    function escapeHtml(unsafe) { return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
+    function renderSpecialContent(element) { const rawText = element.textContent; const parts = rawText.split('```'); let html = ''; for (let i = 0; i < parts.length; i++) { if (i % 2 === 0) { html += parts[i]; } else { let codeBlock = parts[i]; let langMatch = codeBlock.match(/^(\w+)\n/); let lang = langMatch ? langMatch[1] : 'plaintext'; let code = langMatch ? codeBlock.substring(lang.length + 1) : codeBlock; html += `<pre><code class="language-${lang}">${escapeHtml(code)}</code></pre>`; } } element.innerHTML = html; if (window.renderMathInElement) { renderMathInElement(element, { delimiters: [ {left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false} ], throwOnError: false }); } element.querySelectorAll('pre code').forEach((block) => { hljs.highlightElement(block); }); }
+    const displayPunctuatedLog = (text) => { const logEntry = document.createElement('div'); logEntry.className = "p-2 bg-gray-700/50 rounded-md"; logEntry.textContent = text; finalTranscriptDiv.appendChild(logEntry); };
+    const categoryClassMap = { 'Технический': 'technical', 'Общий': 'general', 'Личный': 'personal', 'Финансовый': 'financial' };
+    const updateLogWithTag = (questionText, category) => { const allLogs = finalTranscriptDiv.getElementsByTagName('div'); for (let log of allLogs) { if (log.textContent.includes(questionText) && !log.querySelector('.q-tag')) { const tag = document.createElement('span'); const cssClass = categoryClassMap[category] || 'general'; tag.className = `q-tag tag-${cssClass}`; tag.textContent = category; log.innerHTML = log.innerHTML.replace(questionText, `<span class="q-tag-parent">${tag.outerHTML}${questionText}</span>`); break; } } finalTranscriptDiv.scrollTop = finalTranscriptDiv.scrollHeight; };
+    const displayAIResponse = (responseText, title) => { const responseContainer = document.createElement('div'); responseContainer.className = "bg-blue-900/30 border border-blue-700 p-4 rounded-lg"; const header = document.createElement('h3'); header.className = "text-lg font-bold text-blue-300 mb-2"; header.textContent = title; responseContainer.appendChild(header); const content = document.createElement('p'); content.className = "ai-response-content text-gray-200 whitespace-pre-wrap"; content.textContent = responseText; responseContainer.appendChild(content); aiResponseArea.appendChild(responseContainer); aiResponseArea.scrollTop = aiResponseArea.scrollHeight; return { container: responseContainer, content: content }; };
+
+    // --- Event Listeners ---
+    settingsButton.addEventListener('click', () => { modalApiKeyInput.value = openAIApiKey; settingsModal.classList.remove('hidden'); settingsModal.classList.add('flex'); });
+    function closeModal() { settingsModal.classList.add('hidden'); settingsModal.classList.remove('flex'); }
+    modalCancelButton.addEventListener('click', closeModal);
+    modalSaveButton.addEventListener('click', () => { openAIApiKey = modalApiKeyInput.value.trim(); localStorage.setItem('openai_api_key', openAIApiKey); if(openAIApiKey) { console.log("API Key saved."); } else { console.warn("API Key cleared from storage."); } closeModal(); });
+    settingsModal.addEventListener('click', (event) => { if (event.target === settingsModal) { closeModal(); } });
+    
+    startButton.addEventListener('click', () => {
+        if (isListening || !recognition) return;
+        if (!openAIApiKey) {
+           alert('Пожалуйста, введите ваш API ключ в настройках (иконка шестеренки в правом верхнем углу).');
+           return;
+        }
+        const selectedLang = languageSelect.value;
+        recognition.lang = selectedLang === 'auto' ? 'ru-RU' : selectedLang;
+        recognition.start();
+    });
+    
+    recognition.onstart = () => { isListening = true; startButton.disabled = true; stopButton.disabled = false; languageSelect.disabled = true; statusText.textContent = 'Listening...'; statusLight.className = 'w-3 h-3 rounded-full bg-green-500 pulse'; finalTranscriptDiv.innerHTML = ''; aiResponseArea.innerHTML = ''; if (aiPlaceholder) aiResponseArea.appendChild(aiPlaceholder); if (aiPlaceholder) aiPlaceholder.style.display = 'block'; rawConversationBuffer = []; analysisQueue.length = 0; clearInterval(periodicTimer); periodicTimer = setInterval(scheduleAnalysis, PERIODIC_THRESHOLD); };
+    stopButton.addEventListener('click', () => { if (!isListening || !recognition) return; recognition.stop(); });
+    recognition.onend = () => { isListening = false; startButton.disabled = false; stopButton.disabled = true; languageSelect.disabled = false; statusText.textContent = 'Stopped'; statusLight.className = 'w-3 h-3 rounded-full bg-red-500'; clearTimeout(silenceTimer); clearInterval(periodicTimer); scheduleAnalysis(); };
+    recognition.onerror = (event) => { console.error('Speech recognition error:', event.error); statusText.textContent = `Error: ${event.error}`; };
+    recognition.onresult = (event) => { clearTimeout(silenceTimer); silenceTimer = setTimeout(scheduleAnalysis, SILENCE_THRESHOLD); let interim_transcript = ''; for (let i = event.resultIndex; i < event.results.length; ++i) { const transcriptPart = event.results[i][0].transcript; if (event.results[i].isFinal) { if (transcriptPart.trim()) { rawConversationBuffer.push(transcriptPart.trim()); } } else { interim_transcript += transcriptPart; } } interimTranscriptDiv.textContent = interim_transcript; };
+</script>
+</body>
+</html>
