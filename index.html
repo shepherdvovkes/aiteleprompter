@@ -33,7 +33,7 @@
         <!-- Controls -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-center bg-gray-900/50 p-4 rounded-lg flex-shrink-0">
             <div class="flex items-center justify-center md:justify-start space-x-3"> <button id="startButton" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition-colors w-full md:w-auto">Start</button> <button id="stopButton" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors w-full md:w-auto" disabled>Stop</button> </div>
-            <div id="status" class="flex items-center justify-center text-gray-400 space-x-2"> <div id="status-light" class="w-3 h-3 rounded-full bg-gray-500"></div> <span id="status-text">Stopped</span> </div>
+        <div id="status" class="flex items-center justify-center text-gray-400 space-x-2"> <div id="status-light" class="w-3 h-3 rounded-full bg-gray-500"></div> <span id="status-text">Stopped</span> </div>
             <div class="flex items-center justify-center md:justify-end">
                 <label for="language" class="text-sm font-medium mr-3">Language:</label>
                 <select id="language" class="bg-gray-700 border border-gray-600 rounded-md p-2 text-gray-200 focus:ring-2 focus:ring-blue-500">
@@ -43,6 +43,7 @@
                 </select>
             </div>
         </div>
+        <div id="current-speaker" class="text-center text-sm text-gray-400">Speaker: N/A</div>
         <!-- Panes... (unchanged) -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 relative flex-grow min-h-0"> <div class="bg-gray-900/50 p-4 rounded-lg space-y-4 flex flex-col"> <h2 class="text-xl font-semibold text-white border-b border-gray-700 pb-2 flex-shrink-0">Live Transcription</h2> <div id="interim-transcript" class="h-24 p-2 text-gray-400 italic flex-shrink-0">...</div> <h3 class="text-lg font-semibold text-white border-b border-gray-700 pb-2 flex-shrink-0">Conversation Log</h3> <div id="final-transcript" class="flex-grow overflow-y-auto p-2 space-y-2 text-gray-200"></div> </div> <div class="bg-gray-900/50 p-4 rounded-lg flex flex-col"> <h2 class="text-xl font-semibold text-white border-b border-gray-700 pb-2 flex-shrink-0">AI Assistant Response</h2> <div id="ai-response-area" class="flex-grow overflow-y-auto p-2 space-y-4 text-gray-300"> <div id="ai-placeholder" class="text-gray-500 text-center pt-10"> <svg class="mx-auto h-12 w-12 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg> <p class="mt-2 text-sm">Answers will appear here. Set your API key in settings.</p> </div> </div> </div> </div>
     </div>
@@ -59,6 +60,14 @@
                 <label for="modal-topic-input" class="block text-sm font-medium text-gray-300 mb-2">Conversation topic:</label>
                 <input type="text" id="modal-topic-input" class="w-full bg-gray-900 border border-gray-600 rounded-md p-2 text-gray-200 focus:ring-2 focus:ring-blue-500" placeholder="Solidity, finance ...">
                 <p class="text-xs text-gray-500 mt-2">Provide a general topic for more accurate answers.</p>
+            </div>
+            <div>
+                <label for="modal-person1-input" class="block text-sm font-medium text-gray-300 mb-2">Имя человека у микрофона:</label>
+                <input type="text" id="modal-person1-input" class="w-full bg-gray-900 border border-gray-600 rounded-md p-2 text-gray-200 focus:ring-2 focus:ring-blue-500" placeholder="Person 1">
+            </div>
+            <div>
+                <label for="modal-person2-input" class="block text-sm font-medium text-gray-300 mb-2">Имя удаленного собеседника:</label>
+                <input type="text" id="modal-person2-input" class="w-full bg-gray-900 border border-gray-600 rounded-md p-2 text-gray-200 focus:ring-2 focus:ring-blue-500" placeholder="Person 2">
             </div>
             <div class="flex justify-end space-x-4">
                 <button id="modal-cancel-button" class="px-4 py-2 rounded-md text-gray-300 hover:bg-gray-700 transition-colors">Cancel</button>
@@ -83,11 +92,19 @@
     const settingsButton = document.getElementById('settings-button');
     const modalApiKeyInput = document.getElementById('modal-apiKey-input');
     const modalTopicInput = document.getElementById('modal-topic-input');
+    const modalPerson1Input = document.getElementById('modal-person1-input');
+    const modalPerson2Input = document.getElementById('modal-person2-input');
+    const currentSpeakerDiv = document.getElementById('current-speaker');
     const modalSaveButton = document.getElementById('modal-save-button');
     const modalCancelButton = document.getElementById('modal-cancel-button');
     
     let openAIApiKey = localStorage.getItem('openai_api_key') || '';
     let conversationTopic = localStorage.getItem('conversation_topic') || '';
+    let person1Name = localStorage.getItem('person1_name') || 'Person 1';
+    let person2Name = localStorage.getItem('person2_name') || 'Person 2';
+    let person1Volume = 0;
+    let person2Volume = 0;
+    let audioContext, analyser, volumeInterval, volumeHistory = [];
 
     let rawConversationBuffer = []; const analysisQueue = []; let isProcessingQueue = false; 
     let silenceTimer = null; 
@@ -103,6 +120,53 @@
     // --- Queue Processing & Scheduling... (unchanged) ---
     const processQueue = async () => { if (isProcessingQueue || analysisQueue.length === 0) return; isProcessingQueue = true; progressBar.style.display = 'block'; const textToAnalyze = analysisQueue.shift(); try { const punctuatedText = await punctuateText(textToAnalyze); displayPunctuatedLog(punctuatedText); const potentialQuestions = await identifyQuestionsInText(punctuatedText); if (!potentialQuestions || potentialQuestions.length === 0) throw new Error("No questions found"); const prioritized = await prioritizeQuestions(punctuatedText, potentialQuestions.map(q => q.text)); if (!prioritized || !prioritized.main_question) throw new Error("No main question prioritized"); if (aiPlaceholder) aiPlaceholder.style.display = 'none'; if (prioritized.main_question) { const category = await categorizeQuestion(prioritized.main_question, punctuatedText); updateLogWithTag(prioritized.main_question, category); await getOpenAIResponse(prioritized.main_question, `Main question (${category})`); } if (prioritized.secondary_question) { const category = await categorizeQuestion(prioritized.secondary_question, punctuatedText); updateLogWithTag(prioritized.secondary_question, category); await getOpenAIResponse(prioritized.secondary_question, `Follow-up question (${category})`); } } catch (error) { console.log("Analysis pipeline notice:", error.message); } finally { isProcessingQueue = false; if (analysisQueue.length > 0) { processQueue(); } else { progressBar.style.display = 'none'; } } };
     const scheduleAnalysis = () => { if (rawConversationBuffer.length === 0) return; analysisQueue.push(rawConversationBuffer.join(' ')); rawConversationBuffer = []; if (!isProcessingQueue) processQueue(); };
+
+    // --- Speaker Detection ---
+    const startAudioMonitoring = async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(analyser);
+        const dataArray = new Uint8Array(analyser.fftSize);
+        volumeInterval = setInterval(() => {
+            analyser.getByteTimeDomainData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                const val = dataArray[i] - 128;
+                sum += val * val;
+            }
+            const rms = Math.sqrt(sum / dataArray.length);
+            volumeHistory.push(rms);
+            if (volumeHistory.length > 100) volumeHistory.shift();
+        }, 100);
+    };
+
+    const stopAudioMonitoring = () => {
+        if (volumeInterval) clearInterval(volumeInterval);
+        if (audioContext) audioContext.close();
+        volumeHistory = [];
+    };
+
+    const measureAvgVolume = async (seconds) => {
+        volumeHistory = [];
+        await new Promise(res => setTimeout(res, seconds * 1000));
+        const sum = volumeHistory.reduce((a, b) => a + b, 0);
+        return sum / (volumeHistory.length || 1);
+    };
+
+    const getCurrentAvgVolume = () => {
+        const sum = volumeHistory.reduce((a, b) => a + b, 0);
+        return sum / (volumeHistory.length || 1);
+    };
+
+    const calibrateSpeakers = async () => {
+        currentSpeakerDiv.textContent = `Калибровка: ${person1Name}`;
+        person1Volume = await measureAvgVolume(10);
+        currentSpeakerDiv.textContent = `Калибровка: ${person2Name}`;
+        person2Volume = await measureAvgVolume(10);
+        currentSpeakerDiv.textContent = 'Калибровка завершена';
+    };
     
     // --- LLM Helpers... (unchanged) ---
     const callOpenAINonStream = async (messages, model = 'gpt-4o-mini', needsJson = false) => { const body = { model, messages, temperature: 0.2 }; if (needsJson) body.response_format = { type: 'json_object' }; const headers = { 'Content-Type': 'application/json' }; let url = 'https://api.openai.com/v1/chat/completions'; if (openAIApiKey) { headers['Authorization'] = `Bearer ${openAIApiKey}`; } else { url = '/api/chat'; } const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) }); if (!response.ok) { const errorData = await response.json().catch(() => ({})); throw new Error(errorData.error?.message || 'API request failed'); } const data = await response.json(); const content = data.choices[0].message.content; return needsJson ? JSON.parse(content) : content; };
@@ -184,6 +248,8 @@
     settingsButton.addEventListener('click', () => {
         modalApiKeyInput.value = openAIApiKey;
         modalTopicInput.value = conversationTopic;
+        modalPerson1Input.value = person1Name;
+        modalPerson2Input.value = person2Name;
         settingsModal.classList.remove('hidden');
         settingsModal.classList.add('flex');
     });
@@ -192,8 +258,12 @@
     modalSaveButton.addEventListener('click', () => {
         openAIApiKey = modalApiKeyInput.value.trim();
         conversationTopic = modalTopicInput.value.trim();
+        person1Name = modalPerson1Input.value.trim() || 'Person 1';
+        person2Name = modalPerson2Input.value.trim() || 'Person 2';
         localStorage.setItem('openai_api_key', openAIApiKey);
         localStorage.setItem('conversation_topic', conversationTopic);
+        localStorage.setItem('person1_name', person1Name);
+        localStorage.setItem('person2_name', person2Name);
         if(openAIApiKey) {
             console.log("API Key saved.");
         } else {
@@ -203,18 +273,20 @@
     });
     settingsModal.addEventListener('click', (event) => { if (event.target === settingsModal) { closeModal(); } });
     
-    startButton.addEventListener('click', () => {
+    startButton.addEventListener('click', async () => {
         if (isListening || !recognition) return;
         const selectedLang = languageSelect.value;
         recognition.lang = selectedLang === 'auto' ? 'ru-RU' : selectedLang;
+        await startAudioMonitoring();
+        await calibrateSpeakers();
         recognition.start();
     });
     
     recognition.onstart = () => { isListening = true; startButton.disabled = true; stopButton.disabled = false; languageSelect.disabled = true; statusText.textContent = 'Listening...'; statusLight.className = 'w-3 h-3 rounded-full bg-green-500 pulse'; finalTranscriptDiv.innerHTML = ''; aiResponseArea.innerHTML = ''; if (aiPlaceholder) aiResponseArea.appendChild(aiPlaceholder); if (aiPlaceholder) aiPlaceholder.style.display = 'block'; rawConversationBuffer = []; analysisQueue.length = 0; clearInterval(periodicTimer); periodicTimer = setInterval(scheduleAnalysis, PERIODIC_THRESHOLD); };
     stopButton.addEventListener('click', () => { if (!isListening || !recognition) return; recognition.stop(); });
-    recognition.onend = () => { isListening = false; startButton.disabled = false; stopButton.disabled = true; languageSelect.disabled = false; statusText.textContent = 'Stopped'; statusLight.className = 'w-3 h-3 rounded-full bg-red-500'; clearTimeout(silenceTimer); clearInterval(periodicTimer); scheduleAnalysis(); };
+    recognition.onend = () => { isListening = false; startButton.disabled = false; stopButton.disabled = true; languageSelect.disabled = false; statusText.textContent = 'Stopped'; statusLight.className = 'w-3 h-3 rounded-full bg-red-500'; clearTimeout(silenceTimer); clearInterval(periodicTimer); stopAudioMonitoring(); scheduleAnalysis(); };
     recognition.onerror = (event) => { console.error('Speech recognition error:', event.error); statusText.textContent = `Error: ${event.error}`; };
-    recognition.onresult = (event) => { clearTimeout(silenceTimer); silenceTimer = setTimeout(scheduleAnalysis, SILENCE_THRESHOLD); let interim_transcript = ''; for (let i = event.resultIndex; i < event.results.length; ++i) { const transcriptPart = event.results[i][0].transcript; if (event.results[i].isFinal) { if (transcriptPart.trim()) { rawConversationBuffer.push(transcriptPart.trim()); } } else { interim_transcript += transcriptPart; } } interimTranscriptDiv.textContent = interim_transcript; };
+    recognition.onresult = (event) => { clearTimeout(silenceTimer); silenceTimer = setTimeout(scheduleAnalysis, SILENCE_THRESHOLD); let interim_transcript = ''; for (let i = event.resultIndex; i < event.results.length; ++i) { const transcriptPart = event.results[i][0].transcript; if (event.results[i].isFinal) { if (transcriptPart.trim()) { rawConversationBuffer.push(transcriptPart.trim()); const vol = getCurrentAvgVolume(); const speaker = vol > (person1Volume + person2Volume) / 2 ? person1Name : person2Name; currentSpeakerDiv.textContent = `Speaker: ${speaker}`; } } else { interim_transcript += transcriptPart; } } interimTranscriptDiv.textContent = interim_transcript; };
 </script>
 </body>
 </html>
