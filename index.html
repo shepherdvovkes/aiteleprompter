@@ -107,14 +107,16 @@
     let audioContext, analyser, volumeInterval, volumeHistory = [];
 
     let rawConversationBuffer = []; const analysisQueue = []; let isProcessingQueue = false; 
-    let silenceTimer = null; 
+    let silenceTimer = null;
     let periodicTimer = null;
-    const SILENCE_THRESHOLD = 3500; 
+    let chunkTimer = null;
+    const SILENCE_THRESHOLD = 800; // small pauses between words
     const PERIODIC_THRESHOLD = 5000;
+    const CHUNK_DURATION = 5000; // restart recognition every 5s
 
     let teleprompterWindow = null;
     const channel = new BroadcastChannel('teleprompter_channel');
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition; let recognition; let isListening = false;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition; let recognition; let isListening = false; let hasStartedBefore = false;
     if (!SpeechRecognition) { statusText.textContent = "Browser not supported."; startButton.disabled = true; stopButton.disabled = true; } else { recognition = new SpeechRecognition(); recognition.continuous = true; recognition.interimResults = true; }
     
     // --- Queue Processing & Scheduling... (unchanged) ---
@@ -248,6 +250,13 @@
     function escapeHtml(unsafe) { return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
     function renderSpecialContent(element) { const rawText = element.textContent; const parts = rawText.split('```'); let html = ''; for (let i = 0; i < parts.length; i++) { if (i % 2 === 0) { html += parts[i]; } else { let codeBlock = parts[i]; let langMatch = codeBlock.match(/^(\w+)\n/); let lang = langMatch ? langMatch[1] : 'plaintext'; let code = langMatch ? codeBlock.substring(lang.length + 1) : codeBlock; html += `<pre><code class="language-${lang}">${escapeHtml(code)}</code></pre>`; } } element.innerHTML = html; if (window.renderMathInElement) { renderMathInElement(element, { delimiters: [ {left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false} ], throwOnError: false }); } element.querySelectorAll('pre code').forEach((block) => { hljs.highlightElement(block); }); }
     const displayPunctuatedLog = (text) => { const logEntry = document.createElement('div'); logEntry.className = "p-2 bg-gray-700/50 rounded-md"; logEntry.textContent = text; finalTranscriptDiv.appendChild(logEntry); };
+    const displayRecognizedSentence = (text) => {
+        const logEntry = document.createElement('div');
+        logEntry.className = "p-2 bg-gray-600/40 rounded-md";
+        logEntry.textContent = text;
+        finalTranscriptDiv.appendChild(logEntry);
+        finalTranscriptDiv.scrollTop = finalTranscriptDiv.scrollHeight;
+    };
     const categoryClassMap = { 'Technical': 'technical', 'General': 'general', 'Personal': 'personal', 'Financial': 'financial' };
     const updateLogWithTag = (questionText, category) => { const allLogs = finalTranscriptDiv.getElementsByTagName('div'); for (let log of allLogs) { if (log.textContent.includes(questionText) && !log.querySelector('.q-tag')) { const tag = document.createElement('span'); const cssClass = categoryClassMap[category] || 'general'; tag.className = `q-tag tag-${cssClass}`; tag.textContent = category; log.innerHTML = log.innerHTML.replace(questionText, `<span class="q-tag-parent">${tag.outerHTML}${questionText}</span>`); break; } } finalTranscriptDiv.scrollTop = finalTranscriptDiv.scrollHeight; };
     const displayAIResponse = (responseText, title) => { const responseContainer = document.createElement('div'); responseContainer.className = "bg-blue-900/30 border border-blue-700 p-4 rounded-lg"; const header = document.createElement('h3'); header.className = "text-lg font-bold text-blue-300 mb-2"; header.textContent = title; responseContainer.appendChild(header); const content = document.createElement('p'); content.className = "ai-response-content text-gray-200 whitespace-pre-wrap"; content.textContent = responseText; responseContainer.appendChild(content); aiResponseArea.appendChild(responseContainer); aiResponseArea.scrollTop = aiResponseArea.scrollHeight; return { container: responseContainer, content: content }; };
@@ -299,15 +308,81 @@
         }
 
         await startAudioMonitoring();
+        isListening = true;
+        hasStartedBefore = false;
         recognition.start();
         calibrateSpeakers();
     });
     
-    recognition.onstart = () => { isListening = true; startButton.disabled = true; stopButton.disabled = false; languageSelect.disabled = true; statusText.textContent = 'Listening...'; statusLight.className = 'w-3 h-3 rounded-full bg-green-500 pulse'; finalTranscriptDiv.innerHTML = ''; aiResponseArea.innerHTML = ''; if (aiPlaceholder) aiResponseArea.appendChild(aiPlaceholder); if (aiPlaceholder) aiPlaceholder.style.display = 'block'; rawConversationBuffer = []; analysisQueue.length = 0; clearInterval(periodicTimer); periodicTimer = setInterval(scheduleAnalysis, PERIODIC_THRESHOLD); };
-    stopButton.addEventListener('click', () => { if (!isListening || !recognition) return; recognition.stop(); });
-    recognition.onend = () => { isListening = false; startButton.disabled = false; stopButton.disabled = true; languageSelect.disabled = false; statusText.textContent = 'Stopped'; statusLight.className = 'w-3 h-3 rounded-full bg-red-500'; clearTimeout(silenceTimer); clearInterval(periodicTimer); stopAudioMonitoring(); scheduleAnalysis(); };
+    let shouldRestart = false;
+    recognition.onstart = () => {
+        if (!isListening) return; // ignore spurious starts
+        startButton.disabled = true;
+        stopButton.disabled = false;
+        languageSelect.disabled = true;
+        statusText.textContent = 'Listening...';
+        statusLight.className = 'w-3 h-3 rounded-full bg-green-500 pulse';
+        if (!hasStartedBefore) {
+            finalTranscriptDiv.innerHTML = '';
+            aiResponseArea.innerHTML = '';
+            if (aiPlaceholder) aiResponseArea.appendChild(aiPlaceholder);
+            if (aiPlaceholder) aiPlaceholder.style.display = 'block';
+            rawConversationBuffer = [];
+            analysisQueue.length = 0;
+            hasStartedBefore = true;
+        }
+        clearInterval(periodicTimer);
+        periodicTimer = setInterval(scheduleAnalysis, PERIODIC_THRESHOLD);
+        clearInterval(chunkTimer);
+        chunkTimer = setInterval(() => { shouldRestart = true; recognition.stop(); }, CHUNK_DURATION);
+    };
+    stopButton.addEventListener('click', () => {
+        if (!isListening || !recognition) return;
+        isListening = false;
+        recognition.stop();
+    });
+    recognition.onend = () => {
+        clearTimeout(silenceTimer);
+        clearInterval(periodicTimer);
+        if (shouldRestart && isListening) {
+            shouldRestart = false;
+            recognition.start();
+            clearInterval(chunkTimer);
+            chunkTimer = setInterval(() => { shouldRestart = true; recognition.stop(); }, CHUNK_DURATION);
+            return;
+        }
+        clearInterval(chunkTimer);
+        stopAudioMonitoring();
+        startButton.disabled = false;
+        stopButton.disabled = true;
+        languageSelect.disabled = false;
+        statusText.textContent = 'Stopped';
+        statusLight.className = 'w-3 h-3 rounded-full bg-red-500';
+        isListening = false;
+        hasStartedBefore = false;
+        scheduleAnalysis();
+    };
     recognition.onerror = (event) => { console.error('Speech recognition error:', event.error); statusText.textContent = `Error: ${event.error}`; };
-    recognition.onresult = (event) => { clearTimeout(silenceTimer); silenceTimer = setTimeout(scheduleAnalysis, SILENCE_THRESHOLD); let interim_transcript = ''; for (let i = event.resultIndex; i < event.results.length; ++i) { const transcriptPart = event.results[i][0].transcript; if (event.results[i].isFinal) { if (transcriptPart.trim()) { rawConversationBuffer.push(transcriptPart.trim()); const vol = getCurrentAvgVolume(); const speaker = vol > (person1Volume + person2Volume) / 2 ? person1Name : person2Name; currentSpeakerDiv.textContent = `Speaker: ${speaker}`; } } else { interim_transcript += transcriptPart; } } interimTranscriptDiv.textContent = interim_transcript; };
+    recognition.onresult = (event) => {
+        clearTimeout(silenceTimer);
+        silenceTimer = setTimeout(() => { shouldRestart = true; recognition.stop(); }, SILENCE_THRESHOLD);
+        let interim_transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const transcriptPart = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+                if (transcriptPart.trim()) {
+                    rawConversationBuffer.push(transcriptPart.trim());
+                    displayRecognizedSentence(transcriptPart.trim());
+                    const vol = getCurrentAvgVolume();
+                    const speaker = vol > (person1Volume + person2Volume) / 2 ? person1Name : person2Name;
+                    currentSpeakerDiv.textContent = `Speaker: ${speaker}`;
+                }
+            } else {
+                interim_transcript += transcriptPart;
+            }
+        }
+        interimTranscriptDiv.textContent = interim_transcript;
+    };
 </script>
 </body>
 </html>
