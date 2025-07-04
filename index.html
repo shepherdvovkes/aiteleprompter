@@ -124,7 +124,17 @@
     
     // --- Queue Processing & Scheduling... (unchanged) ---
     const processQueue = async () => { if (isProcessingQueue || analysisQueue.length === 0) return; isProcessingQueue = true; progressBar.style.display = 'block'; const textToAnalyze = analysisQueue.shift(); try { const punctuatedText = await punctuateText(textToAnalyze); displayPunctuatedLog(punctuatedText); const potentialQuestions = await identifyQuestionsInText(punctuatedText); if (!potentialQuestions || potentialQuestions.length === 0) throw new Error("No questions found"); const prioritized = await prioritizeQuestions(punctuatedText, potentialQuestions.map(q => q.text)); if (!prioritized || !prioritized.main_question) throw new Error("No main question prioritized"); if (aiPlaceholder) aiPlaceholder.style.display = 'none'; if (prioritized.main_question) { const category = await categorizeQuestion(prioritized.main_question, punctuatedText); updateLogWithTag(prioritized.main_question, category); await getOpenAIResponse(prioritized.main_question, `Main question (${category})`); } if (prioritized.secondary_question) { const category = await categorizeQuestion(prioritized.secondary_question, punctuatedText); updateLogWithTag(prioritized.secondary_question, category); await getOpenAIResponse(prioritized.secondary_question, `Follow-up question (${category})`); } } catch (error) { console.log("Analysis pipeline notice:", error.message); } finally { isProcessingQueue = false; if (analysisQueue.length > 0) { processQueue(); } else { progressBar.style.display = 'none'; } } };
-    const scheduleAnalysis = () => { if (rawConversationBuffer.length === 0) return; analysisQueue.push(rawConversationBuffer.join(' ')); rawConversationBuffer = []; if (!isProcessingQueue) processQueue(); };
+    const scheduleAnalysis = () => {
+        if (partialSentence.trim()) {
+            rawConversationBuffer.push(partialSentence.trim());
+            displayRecognizedSentence(partialSentence.trim());
+            partialSentence = '';
+        }
+        if (rawConversationBuffer.length === 0) return;
+        analysisQueue.push(rawConversationBuffer.join(' '));
+        rawConversationBuffer = [];
+        if (!isProcessingQueue) processQueue();
+    };
 
     // --- Speaker Detection ---
     const startAudioMonitoring = async () => {
