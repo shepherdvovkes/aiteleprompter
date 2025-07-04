@@ -106,7 +106,10 @@
     let person2Volume = 0;
     let audioContext, analyser, volumeInterval, volumeHistory = [];
 
-    let rawConversationBuffer = []; const analysisQueue = []; let isProcessingQueue = false; 
+    let rawConversationBuffer = [];
+    const analysisQueue = [];
+    let isProcessingQueue = false;
+    let partialSentence = '';
     let silenceTimer = null;
     let periodicTimer = null;
     let chunkTimer = null;
@@ -353,6 +356,11 @@
         }
         clearInterval(chunkTimer);
         stopAudioMonitoring();
+        if (partialSentence.trim()) {
+            rawConversationBuffer.push(partialSentence.trim());
+            displayRecognizedSentence(partialSentence.trim());
+            partialSentence = '';
+        }
         startButton.disabled = false;
         stopButton.disabled = true;
         languageSelect.disabled = false;
@@ -371,8 +379,12 @@
             const transcriptPart = event.results[i][0].transcript;
             if (event.results[i].isFinal) {
                 if (transcriptPart.trim()) {
-                    rawConversationBuffer.push(transcriptPart.trim());
-                    displayRecognizedSentence(transcriptPart.trim());
+                    partialSentence += (partialSentence ? ' ' : '') + transcriptPart.trim();
+                    if (/[.!?]\s*$/.test(partialSentence)) {
+                        rawConversationBuffer.push(partialSentence);
+                        displayRecognizedSentence(partialSentence);
+                        partialSentence = '';
+                    }
                     const vol = getCurrentAvgVolume();
                     const speaker = vol > (person1Volume + person2Volume) / 2 ? person1Name : person2Name;
                     currentSpeakerDiv.textContent = `Speaker: ${speaker}`;
