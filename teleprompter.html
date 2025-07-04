@@ -66,6 +66,8 @@
         let fontSize = 5.5; // vmin units
         let isScrolling = true;
         let isFlipped = false;
+        let manualScrolling = false;
+        let manualScrollTimeout;
         
         const channel = new BroadcastChannel('teleprompter_channel');
 
@@ -75,7 +77,7 @@
         }
 
         function scroll() {
-            if (isScrolling && textContainer.scrollHeight > textContainer.clientHeight) {
+            if (!manualScrolling && isScrolling && textContainer.scrollHeight > textContainer.clientHeight) {
                 textContainer.scrollTop += scrollSpeed;
             }
             requestAnimationFrame(scroll);
@@ -145,6 +147,13 @@
             textContainer.style.transform = isFlipped ? 'scaleX(-1)' : 'none';
             teleprompterText.style.transform = isFlipped ? 'scaleX(-1)' : 'none';
         });
+
+        textContainer.addEventListener('wheel', (e) => {
+            manualScrolling = true;
+            textContainer.scrollTop += e.deltaY;
+            clearTimeout(manualScrollTimeout);
+            manualScrollTimeout = setTimeout(() => { manualScrolling = false; }, 1000);
+        }, { passive: true });
         
         window.onload = () => {
             teleprompterText.style.fontSize = `${fontSize}vmin`;
