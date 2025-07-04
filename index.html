@@ -37,8 +37,8 @@
             <div class="flex items-center justify-center md:justify-end">
                 <label for="language" class="text-sm font-medium mr-3">Language:</label>
                 <select id="language" class="bg-gray-700 border border-gray-600 rounded-md p-2 text-gray-200 focus:ring-2 focus:ring-blue-500">
-                    <option value="auto">Авто</option>
-                    <option value="ru-RU">Русский</option>
+                    <option value="auto">Auto</option>
+                    <option value="ru-RU">Russian</option>
                     <option value="en-US">English</option>
                 </select>
             </div>
@@ -49,20 +49,20 @@
     <div id="progress-bar"><div id="progress-bar-inner"></div></div>
     <div id="settings-modal" class="fixed inset-0 z-50 items-center justify-center hidden">
         <div class="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md space-y-4">
-            <h2 class="text-2xl font-bold text-white">Настройки</h2>
+            <h2 class="text-2xl font-bold text-white">Settings</h2>
             <div>
                 <label for="modal-apiKey-input" class="block text-sm font-medium text-gray-300 mb-2">OpenAI API Key:</label>
                 <input type="password" id="modal-apiKey-input" class="w-full bg-gray-900 border border-gray-600 rounded-md p-2 text-gray-200 focus:ring-2 focus:ring-blue-500" placeholder="sk-...">
-                <p class="text-xs text-gray-500 mt-2">Ваш ключ хранится только в браузере и никуда не отправляется.</p>
+                <p class="text-xs text-gray-500 mt-2">Your key is stored only in the browser and never sent anywhere.</p>
             </div>
             <div>
-                <label for="modal-topic-input" class="block text-sm font-medium text-gray-300 mb-2">Тема собеседования:</label>
-                <input type="text" id="modal-topic-input" class="w-full bg-gray-900 border border-gray-600 rounded-md p-2 text-gray-200 focus:ring-2 focus:ring-blue-500" placeholder="Solidity, финансы ...">
-                <p class="text-xs text-gray-500 mt-2">Укажите общую тему беседы для более точных ответов.</p>
+                <label for="modal-topic-input" class="block text-sm font-medium text-gray-300 mb-2">Conversation topic:</label>
+                <input type="text" id="modal-topic-input" class="w-full bg-gray-900 border border-gray-600 rounded-md p-2 text-gray-200 focus:ring-2 focus:ring-blue-500" placeholder="Solidity, finance ...">
+                <p class="text-xs text-gray-500 mt-2">Provide a general topic for more accurate answers.</p>
             </div>
             <div class="flex justify-end space-x-4">
-                <button id="modal-cancel-button" class="px-4 py-2 rounded-md text-gray-300 hover:bg-gray-700 transition-colors">Отмена</button>
-                <button id="modal-save-button" class="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors">Сохранить</button>
+                <button id="modal-cancel-button" class="px-4 py-2 rounded-md text-gray-300 hover:bg-gray-700 transition-colors">Cancel</button>
+                <button id="modal-save-button" class="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors">Save</button>
             </div>
         </div>
     </div>
@@ -101,14 +101,14 @@
     if (!SpeechRecognition) { statusText.textContent = "Browser not supported."; startButton.disabled = true; stopButton.disabled = true; } else { recognition = new SpeechRecognition(); recognition.continuous = true; recognition.interimResults = true; }
     
     // --- Queue Processing & Scheduling... (unchanged) ---
-    const processQueue = async () => { if (isProcessingQueue || analysisQueue.length === 0) return; isProcessingQueue = true; progressBar.style.display = 'block'; const textToAnalyze = analysisQueue.shift(); try { const punctuatedText = await punctuateText(textToAnalyze); displayPunctuatedLog(punctuatedText); const potentialQuestions = await identifyQuestionsInText(punctuatedText); if (!potentialQuestions || potentialQuestions.length === 0) throw new Error("No questions found"); const prioritized = await prioritizeQuestions(punctuatedText, potentialQuestions.map(q => q.text)); if (!prioritized || !prioritized.main_question) throw new Error("No main question prioritized"); if (aiPlaceholder) aiPlaceholder.style.display = 'none'; if (prioritized.main_question) { const category = await categorizeQuestion(prioritized.main_question, punctuatedText); updateLogWithTag(prioritized.main_question, category); await getOpenAIResponse(prioritized.main_question, `Главный вопрос (${category})`); } if (prioritized.secondary_question) { const category = await categorizeQuestion(prioritized.secondary_question, punctuatedText); updateLogWithTag(prioritized.secondary_question, category); await getOpenAIResponse(prioritized.secondary_question, `Дополнительный вопрос (${category})`); } } catch (error) { console.log("Analysis pipeline notice:", error.message); } finally { isProcessingQueue = false; if (analysisQueue.length > 0) { processQueue(); } else { progressBar.style.display = 'none'; } } };
+    const processQueue = async () => { if (isProcessingQueue || analysisQueue.length === 0) return; isProcessingQueue = true; progressBar.style.display = 'block'; const textToAnalyze = analysisQueue.shift(); try { const punctuatedText = await punctuateText(textToAnalyze); displayPunctuatedLog(punctuatedText); const potentialQuestions = await identifyQuestionsInText(punctuatedText); if (!potentialQuestions || potentialQuestions.length === 0) throw new Error("No questions found"); const prioritized = await prioritizeQuestions(punctuatedText, potentialQuestions.map(q => q.text)); if (!prioritized || !prioritized.main_question) throw new Error("No main question prioritized"); if (aiPlaceholder) aiPlaceholder.style.display = 'none'; if (prioritized.main_question) { const category = await categorizeQuestion(prioritized.main_question, punctuatedText); updateLogWithTag(prioritized.main_question, category); await getOpenAIResponse(prioritized.main_question, `Main question (${category})`); } if (prioritized.secondary_question) { const category = await categorizeQuestion(prioritized.secondary_question, punctuatedText); updateLogWithTag(prioritized.secondary_question, category); await getOpenAIResponse(prioritized.secondary_question, `Follow-up question (${category})`); } } catch (error) { console.log("Analysis pipeline notice:", error.message); } finally { isProcessingQueue = false; if (analysisQueue.length > 0) { processQueue(); } else { progressBar.style.display = 'none'; } } };
     const scheduleAnalysis = () => { if (rawConversationBuffer.length === 0) return; analysisQueue.push(rawConversationBuffer.join(' ')); rawConversationBuffer = []; if (!isProcessingQueue) processQueue(); };
     
     // --- LLM Helpers... (unchanged) ---
     const callOpenAINonStream = async (messages, model = 'gpt-4o-mini', needsJson = false) => { const body = { model, messages, temperature: 0.2 }; if (needsJson) body.response_format = { type: 'json_object' }; const headers = { 'Content-Type': 'application/json' }; let url = 'https://api.openai.com/v1/chat/completions'; if (openAIApiKey) { headers['Authorization'] = `Bearer ${openAIApiKey}`; } else { url = '/api/chat'; } const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) }); if (!response.ok) { const errorData = await response.json().catch(() => ({})); throw new Error(errorData.error?.message || 'API request failed'); } const data = await response.json(); const content = data.choices[0].message.content; return needsJson ? JSON.parse(content) : content; };
     const punctuateText = (textBlock) => callOpenAINonStream([{role: 'system', content: 'You are a helpful editor. Correct the following text by adding punctuation (commas, periods, question marks) and capitalizing the beginning of sentences. Return only the corrected text, without any additional comments.'}, {role: 'user', content: textBlock}]);
     const identifyQuestionsInText = async (textBlock) => { const prompt = `Your task is to identify all user questions in the text. If a question is a short phrase (e.g., "why?", "what do you think?"), you MUST combine it with the preceding sentence(s) that provide its context to form a complete, standalone question. For example, if the text is 'My car won't start. What should I do?', the extracted question must be 'My car won't start. What should I do?'. Return ONLY a valid JSON object with a key "potential_questions", which is an array of objects, each with a "text" key containing the full, contextual question. If no questions are found, return an empty array. TEXT: """${textBlock}"""`; const result = await callOpenAINonStream([{ role: 'user', content: prompt }], 'gpt-4o-mini', true); return result.potential_questions; };
-    const categorizeQuestion = async (question, context) => { const categories = ['Технический', 'Общий', 'Личный', 'Финансовый']; const prompt = `Categorize the question into one of: ${categories.join(', ')}. Use context. Return JSON with a "category" key.\n\nCONTEXT: """${context}"""\n\nQUESTION: "${question}"`; const result = await callOpenAINonStream([{ role: 'user', content: prompt }], 'gpt-4o-mini', true); return categories.includes(result.category) ? result.category : "Общий"; };
+    const categorizeQuestion = async (question, context) => { const categories = ['Technical', 'General', 'Personal', 'Financial']; const prompt = `Categorize the question into one of: ${categories.join(', ')}. Use context. Return JSON with a "category" key.\n\nCONTEXT: """${context}"""\n\nQUESTION: "${question}"`; const result = await callOpenAINonStream([{ role: 'user', content: prompt }], 'gpt-4o-mini', true); return categories.includes(result.category) ? result.category : 'General'; };
     const prioritizeQuestions = (context, questions) => callOpenAINonStream([{role: 'user', content: `From context and questions, select one 'main_question' and one 'secondary_question'. Return JSON with these keys (values can be null).\n\nCONTEXT: """${context}"""\n\nQUESTIONS: ${JSON.stringify(questions)}`}],'gpt-4o-mini', true);
     const getResponseLanguage = async (text) => { const prompt = `Analyze the text. Does it contain any Russian words? If yes, answer "Russian". If the text is purely in English or another non-Russian language, answer "English". Respond with a single word. TEXT: """${text}"""`; const result = await callOpenAINonStream([{ role: 'user', content: prompt }]); return result.toLowerCase().includes('russian') ? 'Russian' : 'English'; }
 
@@ -120,7 +120,7 @@
         const contentElement = responseElements.content;
         
         const answerLanguage = await getResponseLanguage(question);
-        const languageInstruction = answerLanguage === 'Russian' ? 'Ваш ответ должен быть полностью на русском языке.' : 'Your response must be entirely in English.';
+        const languageInstruction = answerLanguage === 'Russian' ? 'Your response must be entirely in Russian.' : 'Your response must be entirely in English.';
 
         if (!teleprompterWindow || teleprompterWindow.closed) {
             teleprompterWindow = window.open('teleprompter.html', 'teleprompterWindow', 'width=800,height=600,scrollbars=no,resizable=yes');
@@ -163,7 +163,7 @@
                 break; // Success, exit retry loop
             } catch (error) {
                 console.error(`Stream attempt ${attempt} failed: ${error.message}`);
-                if (attempt === MAX_RETRIES) { contentElement.textContent = `Ошибка соединения после ${MAX_RETRIES} попыток: ${error.message}`; }
+                if (attempt === MAX_RETRIES) { contentElement.textContent = `Connection error after ${MAX_RETRIES} attempts: ${error.message}`; }
                 else { await new Promise(res => setTimeout(res, 1000)); }
             }
         }
@@ -176,7 +176,7 @@
     function escapeHtml(unsafe) { return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
     function renderSpecialContent(element) { const rawText = element.textContent; const parts = rawText.split('```'); let html = ''; for (let i = 0; i < parts.length; i++) { if (i % 2 === 0) { html += parts[i]; } else { let codeBlock = parts[i]; let langMatch = codeBlock.match(/^(\w+)\n/); let lang = langMatch ? langMatch[1] : 'plaintext'; let code = langMatch ? codeBlock.substring(lang.length + 1) : codeBlock; html += `<pre><code class="language-${lang}">${escapeHtml(code)}</code></pre>`; } } element.innerHTML = html; if (window.renderMathInElement) { renderMathInElement(element, { delimiters: [ {left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false} ], throwOnError: false }); } element.querySelectorAll('pre code').forEach((block) => { hljs.highlightElement(block); }); }
     const displayPunctuatedLog = (text) => { const logEntry = document.createElement('div'); logEntry.className = "p-2 bg-gray-700/50 rounded-md"; logEntry.textContent = text; finalTranscriptDiv.appendChild(logEntry); };
-    const categoryClassMap = { 'Технический': 'technical', 'Общий': 'general', 'Личный': 'personal', 'Финансовый': 'financial' };
+    const categoryClassMap = { 'Technical': 'technical', 'General': 'general', 'Personal': 'personal', 'Financial': 'financial' };
     const updateLogWithTag = (questionText, category) => { const allLogs = finalTranscriptDiv.getElementsByTagName('div'); for (let log of allLogs) { if (log.textContent.includes(questionText) && !log.querySelector('.q-tag')) { const tag = document.createElement('span'); const cssClass = categoryClassMap[category] || 'general'; tag.className = `q-tag tag-${cssClass}`; tag.textContent = category; log.innerHTML = log.innerHTML.replace(questionText, `<span class="q-tag-parent">${tag.outerHTML}${questionText}</span>`); break; } } finalTranscriptDiv.scrollTop = finalTranscriptDiv.scrollHeight; };
     const displayAIResponse = (responseText, title) => { const responseContainer = document.createElement('div'); responseContainer.className = "bg-blue-900/30 border border-blue-700 p-4 rounded-lg"; const header = document.createElement('h3'); header.className = "text-lg font-bold text-blue-300 mb-2"; header.textContent = title; responseContainer.appendChild(header); const content = document.createElement('p'); content.className = "ai-response-content text-gray-200 whitespace-pre-wrap"; content.textContent = responseText; responseContainer.appendChild(content); aiResponseArea.appendChild(responseContainer); aiResponseArea.scrollTop = aiResponseArea.scrollHeight; return { container: responseContainer, content: content }; };
 
