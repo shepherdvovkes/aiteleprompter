@@ -1,6 +1,11 @@
 const express = require('express');
 const path = require('path');
-require('dotenv').config();
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+
+let fetchFn = global.fetch;
+if (typeof fetchFn !== 'function') {
+  fetchFn = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,7 +20,7 @@ app.post('/api/chat', async (req, res) => {
   }
 
   try {
-    const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+    const openaiRes = await fetchFn('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
