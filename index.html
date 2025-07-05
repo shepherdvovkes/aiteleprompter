@@ -113,8 +113,10 @@
     let silenceTimer = null;
     let periodicTimer = null;
     let chunkTimer = null;
+    let sentencePauseTimer = null;
     const SILENCE_THRESHOLD = 800; // small pauses between words
-    const PERIODIC_THRESHOLD = 5000;
+    const SENTENCE_PAUSE_THRESHOLD = 1500;
+    const PERIODIC_THRESHOLD = 15000; // less frequent fallback
     const CHUNK_DURATION = 5000; // restart recognition every 5s
 
     let teleprompterWindow = null;
@@ -394,6 +396,18 @@
                         rawConversationBuffer.push(partialSentence);
                         displayRecognizedSentence(partialSentence);
                         partialSentence = '';
+                        clearTimeout(sentencePauseTimer);
+                        scheduleAnalysis();
+                    } else {
+                        clearTimeout(sentencePauseTimer);
+                        sentencePauseTimer = setTimeout(() => {
+                            if (partialSentence.trim()) {
+                                rawConversationBuffer.push(partialSentence.trim());
+                                displayRecognizedSentence(partialSentence.trim());
+                                partialSentence = '';
+                                scheduleAnalysis();
+                            }
+                        }, SENTENCE_PAUSE_THRESHOLD);
                     }
                     const vol = getCurrentAvgVolume();
                     const speaker = vol > (person1Volume + person2Volume) / 2 ? person1Name : person2Name;
