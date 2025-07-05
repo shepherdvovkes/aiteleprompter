@@ -110,6 +110,9 @@
     const analysisQueue = [];
     let isProcessingQueue = false;
     let partialSentence = '';
+    let lockedInterim = '';
+    let interimText = '';
+    let lastLoggedSentence = '';
     let silenceTimer = null;
     let periodicTimer = null;
     let chunkTimer = null;
@@ -118,6 +121,10 @@
     const SENTENCE_PAUSE_THRESHOLD = 1500;
     const PERIODIC_THRESHOLD = 15000; // less frequent fallback
     const CHUNK_DURATION = 5000; // restart recognition every 5s
+
+    const updateInterimDisplay = () => {
+        interimTranscriptDiv.textContent = (lockedInterim + ' ' + partialSentence + ' ' + interimText).trim();
+    };
 
     let teleprompterWindow = null;
     const channel = new BroadcastChannel('teleprompter_channel');
@@ -129,10 +136,10 @@
         if (isProcessingQueue || analysisQueue.length === 0) return;
         isProcessingQueue = true;
         progressBar.style.display = 'block';
-        const { text, logEntry } = analysisQueue.shift();
+        const { text, raw } = analysisQueue.shift();
         try {
             const punctuatedText = await punctuateText(text);
-            displayPunctuatedLog(punctuatedText, logEntry);
+            displayPunctuatedLog(punctuatedText, raw);
             const potentialQuestions = await identifyQuestionsInText(punctuatedText);
             if (!potentialQuestions || potentialQuestions.length === 0) throw new Error("No questions found");
             const prioritized = await prioritizeQuestions(punctuatedText, potentialQuestions.map(q => q.text));
@@ -160,17 +167,21 @@
         }
     };
 
-    const moveSentenceToLog = (sentence) => {
-        const entry = displayRecognizedSentence(sentence);
+    const finalizeSentence = (sentence) => {
+        sentence = sentence.trim();
+        if (!sentence || sentence === lastLoggedSentence) return;
+        lockedInterim = sentence;
+        interimText = '';
         rawConversationBuffer.push(sentence);
-        analysisQueue.push({ text: rawConversationBuffer.join(' '), logEntry: entry });
+        analysisQueue.push({ text: rawConversationBuffer.join(' '), raw: sentence });
         rawConversationBuffer = [];
+        updateInterimDisplay();
         if (!isProcessingQueue) processQueue();
     };
 
     const scheduleAnalysis = () => {
         if (partialSentence.trim()) {
-            moveSentenceToLog(partialSentence.trim());
+            finalizeSentence(partialSentence.trim());
             partialSentence = '';
         }
     };
@@ -301,25 +312,24 @@
     // --- UI Update Functions (unchanged) ---
     function escapeHtml(unsafe) { return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
     function renderSpecialContent(element) { const rawText = element.textContent; const parts = rawText.split('```'); let html = ''; for (let i = 0; i < parts.length; i++) { if (i % 2 === 0) { html += parts[i]; } else { let codeBlock = parts[i]; let langMatch = codeBlock.match(/^(\w+)\n/); let lang = langMatch ? langMatch[1] : 'plaintext'; let code = langMatch ? codeBlock.substring(lang.length + 1) : codeBlock; html += `<pre><code class="language-${lang}">${escapeHtml(code)}</code></pre>`; } } element.innerHTML = html; if (window.renderMathInElement) { renderMathInElement(element, { delimiters: [ {left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false} ], throwOnError: false }); } element.querySelectorAll('pre code').forEach((block) => { hljs.highlightElement(block); }); }
-    const displayPunctuatedLog = (text, logEntry) => {
-        let entry = logEntry;
-        if (!entry) {
-            entry = document.createElement('div');
-            entry.className = "p-2 bg-gray-700/50 rounded-md";
-            finalTranscriptDiv.appendChild(entry);
-        } else {
-            entry.className = "p-2 bg-gray-700/50 rounded-md";
+    const displayPunctuatedLog = (text, raw) => {
+        if (!text || text === lastLoggedSentence) {
+            if (lockedInterim.trim() === raw.trim()) {
+                lockedInterim = '';
+                updateInterimDisplay();
+            }
+            return;
         }
+        lastLoggedSentence = text;
+        const entry = document.createElement('div');
+        entry.className = "p-2 bg-gray-700/50 rounded-md";
         entry.textContent = text;
+        finalTranscriptDiv.appendChild(entry);
         finalTranscriptDiv.scrollTop = finalTranscriptDiv.scrollHeight;
-    };
-    const displayRecognizedSentence = (text) => {
-        const logEntry = document.createElement('div');
-        logEntry.className = "p-2 bg-gray-600/40 rounded-md";
-        logEntry.textContent = text;
-        finalTranscriptDiv.appendChild(logEntry);
-        finalTranscriptDiv.scrollTop = finalTranscriptDiv.scrollHeight;
-        return logEntry;
+        if (lockedInterim.trim() === raw.trim()) {
+            lockedInterim = '';
+            updateInterimDisplay();
+        }
     };
     const categoryClassMap = { 'Technical': 'technical', 'General': 'general', 'Personal': 'personal', 'Financial': 'financial' };
     const updateLogWithTag = (questionText, category) => { const allLogs = finalTranscriptDiv.getElementsByTagName('div'); for (let log of allLogs) { if (log.textContent.includes(questionText) && !log.querySelector('.q-tag')) { const tag = document.createElement('span'); const cssClass = categoryClassMap[category] || 'general'; tag.className = `q-tag tag-${cssClass}`; tag.textContent = category; log.innerHTML = log.innerHTML.replace(questionText, `<span class="q-tag-parent">${tag.outerHTML}${questionText}</span>`); break; } } finalTranscriptDiv.scrollTop = finalTranscriptDiv.scrollHeight; };
@@ -418,7 +428,7 @@
         clearInterval(chunkTimer);
         stopAudioMonitoring();
         if (partialSentence.trim()) {
-            moveSentenceToLog(partialSentence.trim());
+            finalizeSentence(partialSentence.trim());
             partialSentence = '';
         }
         startButton.disabled = false;
@@ -441,14 +451,14 @@
                 if (transcriptPart.trim()) {
                     partialSentence += (partialSentence ? ' ' : '') + transcriptPart.trim();
                     if (/[.!?]\s*$/.test(partialSentence)) {
-                        moveSentenceToLog(partialSentence);
+                        finalizeSentence(partialSentence);
                         partialSentence = '';
                         clearTimeout(sentencePauseTimer);
                     } else {
                         clearTimeout(sentencePauseTimer);
                         sentencePauseTimer = setTimeout(() => {
                             if (partialSentence.trim()) {
-                                moveSentenceToLog(partialSentence.trim());
+                                finalizeSentence(partialSentence.trim());
                                 partialSentence = '';
                             }
                         }, SENTENCE_PAUSE_THRESHOLD);
@@ -461,7 +471,8 @@
                 interim_transcript += transcriptPart;
             }
         }
-        interimTranscriptDiv.textContent = (partialSentence + ' ' + interim_transcript).trim();
+        interimText = interim_transcript;
+        updateInterimDisplay();
     };
 </script>
 </body>
