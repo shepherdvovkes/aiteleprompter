@@ -1,6 +1,5 @@
 const express = require('express');
 const path = require('path');
-const { execSync } = require('child_process');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 let fetchFn = global.fetch;
@@ -13,16 +12,6 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.static(path.join(__dirname)));
 app.use(express.json());
-
-app.get('/version', (req, res) => {
-  try {
-    const hash = execSync('git rev-parse --short HEAD').toString().trim();
-    res.json({ version: hash });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Unable to get version' });
-  }
-});
 
 app.post('/api/chat', async (req, res) => {
   const apiKey = process.env.OPENAI_API_KEY;
