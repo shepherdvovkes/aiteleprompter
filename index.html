@@ -124,18 +124,55 @@
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition; let recognition; let isListening = false; let hasStartedBefore = false;
     if (!SpeechRecognition) { statusText.textContent = "Browser not supported."; startButton.disabled = true; stopButton.disabled = true; } else { recognition = new SpeechRecognition(); recognition.continuous = true; recognition.interimResults = true; }
     
-    // --- Queue Processing & Scheduling... (unchanged) ---
-    const processQueue = async () => { if (isProcessingQueue || analysisQueue.length === 0) return; isProcessingQueue = true; progressBar.style.display = 'block'; const textToAnalyze = analysisQueue.shift(); try { const punctuatedText = await punctuateText(textToAnalyze); displayPunctuatedLog(punctuatedText); const potentialQuestions = await identifyQuestionsInText(punctuatedText); if (!potentialQuestions || potentialQuestions.length === 0) throw new Error("No questions found"); const prioritized = await prioritizeQuestions(punctuatedText, potentialQuestions.map(q => q.text)); if (!prioritized || !prioritized.main_question) throw new Error("No main question prioritized"); if (aiPlaceholder) aiPlaceholder.style.display = 'none'; if (prioritized.main_question) { const category = await categorizeQuestion(prioritized.main_question, punctuatedText); updateLogWithTag(prioritized.main_question, category); await getOpenAIResponse(prioritized.main_question, `Main question (${category})`); } if (prioritized.secondary_question) { const category = await categorizeQuestion(prioritized.secondary_question, punctuatedText); updateLogWithTag(prioritized.secondary_question, category); await getOpenAIResponse(prioritized.secondary_question, `Follow-up question (${category})`); } } catch (error) { console.log("Analysis pipeline notice:", error.message); } finally { isProcessingQueue = false; if (analysisQueue.length > 0) { processQueue(); } else { progressBar.style.display = 'none'; } } };
-    const scheduleAnalysis = () => {
-        if (partialSentence.trim()) {
-            rawConversationBuffer.push(partialSentence.trim());
-            displayRecognizedSentence(partialSentence.trim());
-            partialSentence = '';
+    // --- Queue Processing & Scheduling ---
+    const processQueue = async () => {
+        if (isProcessingQueue || analysisQueue.length === 0) return;
+        isProcessingQueue = true;
+        progressBar.style.display = 'block';
+        const { text, logEntry } = analysisQueue.shift();
+        try {
+            const punctuatedText = await punctuateText(text);
+            displayPunctuatedLog(punctuatedText, logEntry);
+            const potentialQuestions = await identifyQuestionsInText(punctuatedText);
+            if (!potentialQuestions || potentialQuestions.length === 0) throw new Error("No questions found");
+            const prioritized = await prioritizeQuestions(punctuatedText, potentialQuestions.map(q => q.text));
+            if (!prioritized || !prioritized.main_question) throw new Error("No main question prioritized");
+            if (aiPlaceholder) aiPlaceholder.style.display = 'none';
+            if (prioritized.main_question) {
+                const category = await categorizeQuestion(prioritized.main_question, punctuatedText);
+                updateLogWithTag(prioritized.main_question, category);
+                await getOpenAIResponse(prioritized.main_question, `Main question (${category})`);
+            }
+            if (prioritized.secondary_question) {
+                const category = await categorizeQuestion(prioritized.secondary_question, punctuatedText);
+                updateLogWithTag(prioritized.secondary_question, category);
+                await getOpenAIResponse(prioritized.secondary_question, `Follow-up question (${category})`);
+            }
+        } catch (error) {
+            console.log("Analysis pipeline notice:", error.message);
+        } finally {
+            isProcessingQueue = false;
+            if (analysisQueue.length > 0) {
+                processQueue();
+            } else {
+                progressBar.style.display = 'none';
+            }
         }
-        if (rawConversationBuffer.length === 0) return;
-        analysisQueue.push(rawConversationBuffer.join(' '));
+    };
+
+    const moveSentenceToLog = (sentence) => {
+        const entry = displayRecognizedSentence(sentence);
+        rawConversationBuffer.push(sentence);
+        analysisQueue.push({ text: rawConversationBuffer.join(' '), logEntry: entry });
         rawConversationBuffer = [];
         if (!isProcessingQueue) processQueue();
+    };
+
+    const scheduleAnalysis = () => {
+        if (partialSentence.trim()) {
+            moveSentenceToLog(partialSentence.trim());
+            partialSentence = '';
+        }
     };
 
     // --- Speaker Detection ---
@@ -264,13 +301,25 @@
     // --- UI Update Functions (unchanged) ---
     function escapeHtml(unsafe) { return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
     function renderSpecialContent(element) { const rawText = element.textContent; const parts = rawText.split('```'); let html = ''; for (let i = 0; i < parts.length; i++) { if (i % 2 === 0) { html += parts[i]; } else { let codeBlock = parts[i]; let langMatch = codeBlock.match(/^(\w+)\n/); let lang = langMatch ? langMatch[1] : 'plaintext'; let code = langMatch ? codeBlock.substring(lang.length + 1) : codeBlock; html += `<pre><code class="language-${lang}">${escapeHtml(code)}</code></pre>`; } } element.innerHTML = html; if (window.renderMathInElement) { renderMathInElement(element, { delimiters: [ {left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false} ], throwOnError: false }); } element.querySelectorAll('pre code').forEach((block) => { hljs.highlightElement(block); }); }
-    const displayPunctuatedLog = (text) => { const logEntry = document.createElement('div'); logEntry.className = "p-2 bg-gray-700/50 rounded-md"; logEntry.textContent = text; finalTranscriptDiv.appendChild(logEntry); };
+    const displayPunctuatedLog = (text, logEntry) => {
+        let entry = logEntry;
+        if (!entry) {
+            entry = document.createElement('div');
+            entry.className = "p-2 bg-gray-700/50 rounded-md";
+            finalTranscriptDiv.appendChild(entry);
+        } else {
+            entry.className = "p-2 bg-gray-700/50 rounded-md";
+        }
+        entry.textContent = text;
+        finalTranscriptDiv.scrollTop = finalTranscriptDiv.scrollHeight;
+    };
     const displayRecognizedSentence = (text) => {
         const logEntry = document.createElement('div');
         logEntry.className = "p-2 bg-gray-600/40 rounded-md";
         logEntry.textContent = text;
         finalTranscriptDiv.appendChild(logEntry);
         finalTranscriptDiv.scrollTop = finalTranscriptDiv.scrollHeight;
+        return logEntry;
     };
     const categoryClassMap = { 'Technical': 'technical', 'General': 'general', 'Personal': 'personal', 'Financial': 'financial' };
     const updateLogWithTag = (questionText, category) => { const allLogs = finalTranscriptDiv.getElementsByTagName('div'); for (let log of allLogs) { if (log.textContent.includes(questionText) && !log.querySelector('.q-tag')) { const tag = document.createElement('span'); const cssClass = categoryClassMap[category] || 'general'; tag.className = `q-tag tag-${cssClass}`; tag.textContent = category; log.innerHTML = log.innerHTML.replace(questionText, `<span class="q-tag-parent">${tag.outerHTML}${questionText}</span>`); break; } } finalTranscriptDiv.scrollTop = finalTranscriptDiv.scrollHeight; };
@@ -369,8 +418,7 @@
         clearInterval(chunkTimer);
         stopAudioMonitoring();
         if (partialSentence.trim()) {
-            rawConversationBuffer.push(partialSentence.trim());
-            displayRecognizedSentence(partialSentence.trim());
+            moveSentenceToLog(partialSentence.trim());
             partialSentence = '';
         }
         startButton.disabled = false;
@@ -393,19 +441,15 @@
                 if (transcriptPart.trim()) {
                     partialSentence += (partialSentence ? ' ' : '') + transcriptPart.trim();
                     if (/[.!?]\s*$/.test(partialSentence)) {
-                        rawConversationBuffer.push(partialSentence);
-                        displayRecognizedSentence(partialSentence);
+                        moveSentenceToLog(partialSentence);
                         partialSentence = '';
                         clearTimeout(sentencePauseTimer);
-                        scheduleAnalysis();
                     } else {
                         clearTimeout(sentencePauseTimer);
                         sentencePauseTimer = setTimeout(() => {
                             if (partialSentence.trim()) {
-                                rawConversationBuffer.push(partialSentence.trim());
-                                displayRecognizedSentence(partialSentence.trim());
+                                moveSentenceToLog(partialSentence.trim());
                                 partialSentence = '';
-                                scheduleAnalysis();
                             }
                         }, SENTENCE_PAUSE_THRESHOLD);
                     }
@@ -417,7 +461,7 @@
                 interim_transcript += transcriptPart;
             }
         }
-        interimTranscriptDiv.textContent = interim_transcript;
+        interimTranscriptDiv.textContent = (partialSentence + ' ' + interim_transcript).trim();
     };
 </script>
 </body>
