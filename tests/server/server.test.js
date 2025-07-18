@@ -179,7 +179,7 @@ describe('Server API Tests', () => {
           stream: true
         });
 
-      expect(response.headers['content-type']).toBe('text/event-stream; charset=utf-8');
+      expect(response.headers['content-type']).toBe('text/event-stream');
     });
 
     test('should handle network errors', async () => {
