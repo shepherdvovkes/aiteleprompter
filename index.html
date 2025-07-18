@@ -93,6 +93,7 @@
     let openAIApiKey = localStorage.getItem('openai_api_key') || '';
     let conversationTopic = localStorage.getItem('conversation_topic') || '';
     let audioContext, analyser, volumeInterval, volumeHistory = [];
+    let microphoneStream = null; // Кэшируем поток микрофона
 
     let rawConversationBuffer = [];
     const analysisQueue = [];
@@ -246,7 +247,30 @@
 
     // --- Speaker Detection ---
     const startAudioMonitoring = async () => {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Проверяем, есть ли уже активный поток микрофона
+        if (microphoneStream && microphoneStream.active) {
+            console.log('Using existing microphone stream');
+            setupAudioAnalyser(microphoneStream);
+            return;
+        }
+
+        try {
+            // Запрашиваем доступ к микрофону только если его еще нет
+            console.log('Requesting microphone access...');
+            microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            console.log('Microphone access granted');
+            setupAudioAnalyser(microphoneStream);
+        } catch (error) {
+            console.error('Failed to get microphone access:', error);
+            throw error;
+        }
+    };
+
+    const setupAudioAnalyser = (stream) => {
+        if (audioContext && audioContext.state !== 'closed') {
+            audioContext.close();
+        }
+        
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
         analyser = audioContext.createAnalyser();
         const source = audioContext.createMediaStreamSource(stream);
@@ -266,9 +290,16 @@
     };
 
     const stopAudioMonitoring = () => {
-        if (volumeInterval) clearInterval(volumeInterval);
-        if (audioContext) audioContext.close();
+        if (volumeInterval) {
+            clearInterval(volumeInterval);
+            volumeInterval = null;
+        }
+        if (audioContext && audioContext.state !== 'closed') {
+            audioContext.close();
+        }
         volumeHistory = [];
+        // НЕ останавливаем поток микрофона здесь, чтобы не терять разрешения
+        // microphoneStream будет остановлен только при закрытии страницы
     };
 
     const measureAvgVolume = async (seconds) => {
@@ -640,6 +671,26 @@ Question: ${question}`;
         interimText = interim_transcript;
         updateInterimDisplay();
     };
+
+    // Корректное освобождение ресурсов при закрытии страницы
+    window.addEventListener('beforeunload', () => {
+        if (microphoneStream) {
+            microphoneStream.getTracks().forEach(track => track.stop());
+            microphoneStream = null;
+            console.log('Microphone stream stopped on page unload');
+        }
+    });
+
+    // Освобождение ресурсов при потере фокуса страницы (опционально)
+    window.addEventListener('visibilitychange', () => {
+        if (document.hidden && !isListening) {
+            // Если страница скрыта и не идет запись, можно освободить ресурсы
+            if (microphoneStream) {
+                console.log('Page hidden, keeping microphone stream for quick restart');
+                // Не останавливаем поток, чтобы избежать повторных запросов разрешений
+            }
+        }
+    });
 </script>
 </body>
 </html>
