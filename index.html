@@ -105,6 +105,12 @@
     let periodicTimer = null;
     let chunkTimer = null;
     let sentencePauseTimer = null;
+    
+    // Enhanced context management for better question detection
+    let conversationHistory = [];
+    let lastProcessedQuestions = [];
+    let questionContext = '';
+    const MAX_CONTEXT_HISTORY = 5;
     const SILENCE_THRESHOLD = 800; // small pauses between words
     const SENTENCE_PAUSE_THRESHOLD = 1500;
     const PERIODIC_THRESHOLD = 15000; // less frequent fallback
@@ -124,20 +130,58 @@
         if (isProcessingQueue || analysisQueue.length === 0) return;
         isProcessingQueue = true;
         progressBar.style.display = 'block';
-        const { text, raw } = analysisQueue.shift();
+        const { text, raw, context } = analysisQueue.shift();
         try {
             const punctuatedText = await punctuateText(text);
             displayPunctuatedLog(punctuatedText, raw);
-            const potentialQuestions = await identifyQuestionsInText(punctuatedText);
-            if (!potentialQuestions || potentialQuestions.length === 0) throw new Error("No questions found");
+            
+            // Enhanced question identification with better error handling
+            const potentialQuestions = await identifyQuestionsInText(punctuatedText, context || '');
+            
+            // Improved logging for debugging
+            if (potentialQuestions && potentialQuestions.length > 0) {
+                console.log(`Found ${potentialQuestions.length} potential questions:`, potentialQuestions.map(q => `[${q.type}] ${q.text}`));
+            }
+            
+            if (!potentialQuestions || potentialQuestions.length === 0) {
+                // Check if text contains technical keywords that might indicate implicit questions
+                const technicalKeywords = [
+                    'алгоритм', 'algorithm', 'функция', 'function', 'класс', 'class', 
+                    'метод', 'method', 'переменная', 'variable', 'массив', 'array',
+                    'объект', 'object', 'база данных', 'database', 'сервер', 'server',
+                    'фреймворк', 'framework', 'библиотека', 'library', 'API', 'REST',
+                    'реакт', 'react', 'ноде', 'node', 'javascript', 'питон', 'python',
+                    'джава', 'java', 'солидити', 'solidity', 'блокчейн', 'blockchain'
+                ];
+                
+                const containsTechnicalTerms = technicalKeywords.some(keyword => 
+                    punctuatedText.toLowerCase().includes(keyword.toLowerCase())
+                );
+                
+                if (containsTechnicalTerms) {
+                    console.log("Technical terms detected, treating as implicit question");
+                    // Treat technical statements as implicit questions
+                    const implicitQuestion = {
+                        text: punctuatedText,
+                        type: 'technical_implicit'
+                    };
+                    potentialQuestions = [implicitQuestion];
+                } else {
+                    throw new Error("No questions found");
+                }
+            }
+            
             const prioritized = await prioritizeQuestions(punctuatedText, potentialQuestions.map(q => q.text));
             if (!prioritized || !prioritized.main_question) throw new Error("No main question prioritized");
+            
             if (aiPlaceholder) aiPlaceholder.style.display = 'none';
+            
             if (prioritized.main_question) {
                 const category = await categorizeQuestion(prioritized.main_question, punctuatedText);
                 updateLogWithTag(prioritized.main_question, category);
                 await getOpenAIResponse(prioritized.main_question, `Main question (${category})`);
             }
+            
             if (prioritized.secondary_question) {
                 const category = await categorizeQuestion(prioritized.secondary_question, punctuatedText);
                 updateLogWithTag(prioritized.secondary_question, category);
@@ -145,6 +189,13 @@
             }
         } catch (error) {
             console.log("Analysis pipeline notice:", error.message);
+            
+            // Enhanced fallback: if all else fails but we have meaningful text, treat it as a general query
+            if (text.trim().length > 10 && !error.message.includes("API")) {
+                console.log("Fallback: treating as general query");
+                if (aiPlaceholder) aiPlaceholder.style.display = 'none';
+                await getOpenAIResponse(text.trim(), "General query");
+            }
         } finally {
             isProcessingQueue = false;
             if (analysisQueue.length > 0) {
@@ -158,11 +209,29 @@
     const finalizeSentence = (sentence) => {
         sentence = sentence.trim();
         if (!sentence || sentence === lastLoggedSentence) return;
+        
         // Очищаем промежуточные переменные чтобы избежать дублирования
         lockedInterim = '';
         interimText = '';
+        
+        // Enhanced context management
+        conversationHistory.push(sentence);
+        if (conversationHistory.length > MAX_CONTEXT_HISTORY) {
+            conversationHistory.shift();
+        }
+        
         rawConversationBuffer.push(sentence);
-        analysisQueue.push({ text: rawConversationBuffer.join(' '), raw: sentence });
+        
+        // Build context from recent conversation history for better question detection
+        const contextText = conversationHistory.slice(-3).join(' ');
+        questionContext = contextText;
+        
+        analysisQueue.push({ 
+            text: rawConversationBuffer.join(' '), 
+            raw: sentence,
+            context: questionContext 
+        });
+        
         rawConversationBuffer = [];
         updateInterimDisplay();
         if (!isProcessingQueue) processQueue();
@@ -227,9 +296,104 @@
     // --- LLM Helpers... (unchanged) ---
     const callOpenAINonStream = async (messages, model = 'gpt-4o-mini', needsJson = false) => { const body = { model, messages, temperature: 0.2 }; if (needsJson) body.response_format = { type: 'json_object' }; const headers = { 'Content-Type': 'application/json' }; let url = 'https://api.openai.com/v1/chat/completions'; if (openAIApiKey) { headers['Authorization'] = `Bearer ${openAIApiKey}`; } else { url = '/api/chat'; } const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) }); if (!response.ok) { const errorData = await response.json().catch(() => ({})); throw new Error(errorData.error?.message || 'API request failed'); } const data = await response.json(); const content = data.choices[0].message.content; return needsJson ? JSON.parse(content) : content; };
     const punctuateText = (textBlock) => callOpenAINonStream([{role: 'system', content: 'You are a helpful editor. Correct the following text by adding punctuation (commas, periods, question marks) and capitalizing the beginning of sentences. Return only the corrected text, without any additional comments.'}, {role: 'user', content: textBlock}]);
-    const identifyQuestionsInText = async (textBlock) => { const prompt = `Your task is to identify all user questions in the text. If a question is a short phrase (e.g., "why?", "what do you think?"), you MUST combine it with the preceding sentence(s) that provide its context to form a complete, standalone question. For example, if the text is 'My car won't start. What should I do?', the extracted question must be 'My car won't start. What should I do?'. Return ONLY a valid JSON object with a key "potential_questions", which is an array of objects, each with a "text" key containing the full, contextual question. If no questions are found, return an empty array. TEXT: """${textBlock}"""`; const result = await callOpenAINonStream([{ role: 'user', content: prompt }], 'gpt-4o-mini', true); return result.potential_questions; };
-    const categorizeQuestion = async (question, context) => { const categories = ['Technical', 'General', 'Personal', 'Financial']; const prompt = `Categorize the question into one of: ${categories.join(', ')}. Use context. Return JSON with a "category" key.\n\nCONTEXT: """${context}"""\n\nQUESTION: "${question}"`; const result = await callOpenAINonStream([{ role: 'user', content: prompt }], 'gpt-4o-mini', true); return categories.includes(result.category) ? result.category : 'General'; };
-    const prioritizeQuestions = (context, questions) => callOpenAINonStream([{role: 'user', content: `From context and questions, select one 'main_question' and one 'secondary_question'. Return JSON with these keys (values can be null).\n\nCONTEXT: """${context}"""\n\nQUESTIONS: ${JSON.stringify(questions)}`}],'gpt-4o-mini', true);
+    
+    const identifyQuestionsInText = async (textBlock, conversationContext = '') => { 
+        const contextInstruction = conversationContext ? 
+            `\n\nCONVERSATION CONTEXT (previous sentences): """${conversationContext}"""\n\n` : '';
+        
+        const prompt = `You are an expert at identifying questions and requests in technical interview contexts. Your task is to identify ALL user questions, requests, and implicit queries in the text, including:${contextInstruction}
+
+1. DIRECT QUESTIONS: Traditional questions ending with "?" 
+2. IMPLICIT QUESTIONS: Statements that expect a response or explanation:
+   - "Tell me about..." / "Расскажите о..."
+   - "Explain..." / "Объясните..."  
+   - "Show me how..." / "Покажите как..."
+   - "Walk me through..." / "Проведите меня через..."
+   - "What do you think about..." / "Что вы думаете о..."
+   - "How would you..." / "Как бы вы..."
+   - "Can you..." / "Можете ли вы..."
+   - "Could you..." / "Не могли бы вы..."
+   - "Would you..." / "Хотели бы вы..."
+
+3. TECHNICAL INTERVIEW PATTERNS:
+   - "Implement a..." / "Реализуйте..."
+   - "Design a system..." / "Спроектируйте систему..."
+   - "Write a function..." / "Напишите функцию..."
+   - "Optimize this..." / "Оптимизируйте это..."
+   - "Debug this code..." / "Отладьте этот код..."
+   - "Compare X and Y..." / "Сравните X и Y..."
+   - "What's the difference between..." / "В чём разница между..."
+   - "Pros and cons of..." / "Плюсы и минусы..."
+
+4. CONTEXTUAL ANALYSIS: If a statement seems incomplete or refers to previous context (like "Why?", "How?", "What about X?"), combine it with 2-3 preceding sentences to form a complete, standalone question.
+
+5. IMPERATIVE STATEMENTS: Commands that imply a question or request for explanation:
+   - "Consider this scenario..." / "Рассмотрите этот сценарий..."
+   - "Assume we have..." / "Предположим, у нас есть..."
+   - "Let's say..." / "Допустим..."
+
+IMPORTANT RULES:
+- If a question is short and lacks context (e.g., "why?", "how?"), MUST combine it with preceding sentences
+- For technical terms, assume they are part of an interview question
+- Include statements that expect demonstration of knowledge
+- Consider cultural context (Russian vs English phrasing patterns)
+- If someone mentions a technology/concept and then asks for clarification, treat the whole segment as one question
+
+Return ONLY a valid JSON object with a key "potential_questions", which is an array of objects, each with a "text" key containing the full, contextual question and a "type" key indicating the question type ("direct", "implicit", "technical", "contextual"). If no questions are found, return an empty array.
+
+TEXT: """${textBlock}"""`;
+        
+        const result = await callOpenAINonStream([{ role: 'user', content: prompt }], 'gpt-4o-mini', true); 
+        return result.potential_questions; 
+    };
+    
+    const categorizeQuestion = async (question, context) => { 
+        const categories = ['Technical', 'General', 'Personal', 'Financial']; 
+        const prompt = `You are categorizing questions from a technical interview context. Analyze the question and its context to determine the most appropriate category.
+
+CATEGORIES:
+- Technical: Programming, algorithms, system design, databases, frameworks, debugging, code optimization, software architecture, data structures, etc.
+- General: Non-technical work-related topics, methodologies, project management, team collaboration, general problem-solving approaches
+- Personal: Background, experience, career goals, soft skills, personal preferences, work style
+- Financial: Salary expectations, benefits, compensation, budget-related technical decisions
+
+Consider the interview context when categorizing. Even seemingly general questions might be technical if they relate to software development practices.
+
+Return JSON with a "category" key.
+
+CONTEXT: """${context}"""
+
+QUESTION: "${question}"`; 
+        
+        const result = await callOpenAINonStream([{ role: 'user', content: prompt }], 'gpt-4o-mini', true); 
+        return categories.includes(result.category) ? result.category : 'General'; 
+    };
+    
+    const prioritizeQuestions = (context, questions) => callOpenAINonStream([{
+        role: 'user', 
+        content: `You are analyzing questions from a technical interview. Your task is to prioritize questions based on their importance and relevance.
+
+PRIORITIZATION RULES:
+1. Technical questions have highest priority
+2. Questions requiring immediate code demonstration are very important  
+3. System design questions are high priority
+4. Follow-up questions to previous answers should be prioritized
+5. Short clarifying questions ("why?", "how?") should be combined with their context and prioritized highly
+6. General knowledge questions are medium priority
+7. Personal/background questions are lower priority unless specifically asked
+
+From the provided context and questions, select:
+- ONE 'main_question': The most important/urgent question that should be answered first
+- ONE 'secondary_question': A follow-up or less urgent question (can be null)
+
+If there are multiple technical questions, prioritize the most specific or actionable one.
+
+Return JSON with these keys (values can be null if no suitable questions exist).
+
+CONTEXT: """${context}"""
+
+QUESTIONS: ${JSON.stringify(questions)}`
+    }], 'gpt-4o-mini', true);
     const getResponseLanguage = async (text) => { const prompt = `Analyze the text. Does it contain any Russian words? If yes, answer "Russian". If the text is purely in English or another non-Russian language, answer "English". Respond with a single word. TEXT: """${text}"""`; const result = await callOpenAINonStream([{ role: 'user', content: prompt }]); return result.toLowerCase().includes('russian') ? 'Russian' : 'English'; }
 
     // --- Streaming Logic with Retry & Language Awareness ---
@@ -255,7 +419,23 @@
                 channel.postMessage({ type: 'start' });
                 
                 const topicInstruction = conversationTopic ? `The conversation topic is ${conversationTopic}. ` : '';
-                const engineeredPrompt = `${topicInstruction}You are an expert software developer and machine learning engineer. Provide a concise, accurate answer to the question. ${languageInstruction}\n\nQuestion: ${question}`;
+                
+                // Enhanced prompt for technical interviews
+                const engineeredPrompt = `${topicInstruction}You are an experienced senior software engineer and technical interview expert. You are helping a candidate prepare for a technical interview.
+
+RESPONSE GUIDELINES:
+1. Provide clear, structured answers that demonstrate deep technical knowledge
+2. Include practical examples and code snippets when relevant  
+3. Mention best practices, trade-offs, and real-world considerations
+4. For algorithm questions, explain time/space complexity
+5. For system design questions, discuss scalability, reliability, and maintainability
+6. Use industry-standard terminology and patterns
+7. Keep answers concise but comprehensive - suitable for interview setting
+8. If question is ambiguous, make reasonable assumptions and state them
+
+${languageInstruction}
+
+Question: ${question}`;
                 
                 const headers = { 'Content-Type': 'application/json' }; let url = 'https://api.openai.com/v1/chat/completions'; if (openAIApiKey) { headers['Authorization'] = `Bearer ${openAIApiKey}`; } else { url = '/api/chat'; } const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ model: 'gpt-4', messages: [{ role: 'user', content: engineeredPrompt }], stream: true }) });
                 if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
@@ -374,7 +554,7 @@
             finalTranscriptDiv.innerHTML = '';
             aiResponseArea.innerHTML = '';
             if (aiPlaceholder) aiResponseArea.appendChild(aiPlaceholder);
-            if (aiPlaceholder) aiPlaceholder.style.display = 'block';
+            if (aiPlaceholder) aiResponseArea.appendChild(aiPlaceholder);
             rawConversationBuffer = [];
             analysisQueue.length = 0;
             // Очищаем все промежуточные переменные для предотвращения дублирования
@@ -382,6 +562,10 @@
             lockedInterim = '';
             interimText = '';
             lastLoggedSentence = '';
+            // Reset enhanced context tracking
+            conversationHistory = [];
+            lastProcessedQuestions = [];
+            questionContext = '';
             updateInterimDisplay();
             hasStartedBefore = true;
         }
