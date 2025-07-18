@@ -30,10 +30,15 @@ function isValidCacheEntry(timestamp) {
 // Enhanced OpenAI API endpoint with caching
 app.post('/api/chat', async (req, res) => {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
+  if (!apiKey || apiKey === 'your_openai_api_key_here') {
     return res.status(500).json({ 
-      error: 'OPENAI_API_KEY not set',
-      message: 'Server configuration error. Please contact administrator.'
+      error: 'OPENAI_API_KEY not configured',
+      message: 'Please set your OpenAI API key in the .env file. Get your key from https://platform.openai.com/api-keys',
+      instructions: [
+        '1. Edit the .env file in the project root',
+        '2. Replace "your_openai_api_key_here" with your actual OpenAI API key',
+        '3. Restart the server with: npm start'
+      ]
     });
   }
 
