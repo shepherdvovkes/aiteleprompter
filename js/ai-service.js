@@ -43,9 +43,28 @@ class AIService {
     }
 
     async callOpenAI(messages, model = 'gpt-4o-mini', needsJson = false) {
+        // Validate messages before sending to prevent content type errors
+        const validatedMessages = messages.map((msg, index) => {
+            if (typeof msg.content === 'object' && msg.content !== null && !Array.isArray(msg.content)) {
+                console.warn(`Message ${index} has object content, converting to string:`, msg.content);
+                return {
+                    ...msg,
+                    content: JSON.stringify(msg.content)
+                };
+            }
+            if (msg.content === null || msg.content === undefined) {
+                console.warn(`Message ${index} has null/undefined content, using empty string`);
+                return {
+                    ...msg,
+                    content: ''
+                };
+            }
+            return msg;
+        });
+
         const body = {
             model,
-            messages,
+            messages: validatedMessages,
             temperature: 0.2
         };
 
@@ -77,10 +96,20 @@ class AIService {
             const data = await response.json();
             const content = data.choices[0].message.content;
             
-            return needsJson ? JSON.parse(content) : content;
+            return needsJson ? this.parseJsonResponse(content) : content;
         } catch (error) {
             console.error('OpenAI API call failed:', error);
             throw error;
+        }
+    }
+
+    parseJsonResponse(content) {
+        try {
+            return JSON.parse(content);
+        } catch (error) {
+            console.error('Failed to parse JSON response:', error);
+            console.error('Content that failed to parse:', content);
+            return { error: 'Invalid JSON response', original_content: content };
         }
     }
 
@@ -179,6 +208,12 @@ TEXT TO ANALYZE: """${textBlock}"""`;
         try {
             const semanticResult = await this.callOpenAI([{ role: 'user', content: semanticPrompt }], 'gpt-4o', true);
             
+            // Validate the JSON response structure
+            if (!semanticResult || typeof semanticResult !== 'object') {
+                console.error('Invalid semantic analysis result:', semanticResult);
+                return this.fallbackQuestionDetection(textBlock, conversationContext);
+            }
+            
             // Step 2: Validate and enhance results with linguistic patterns
             const enhancedQuestions = await this.enhanceWithLinguisticAnalysis(
                 semanticResult.potential_questions || [], 
@@ -221,7 +256,14 @@ Return the same JSON structure with improved questions.`;
 
         try {
             const enhanced = await this.callOpenAI([{ role: 'user', content: enhancementPrompt }], 'gpt-4o-mini', true);
-            return enhanced.potential_questions || questions;
+            
+            // Validate enhanced result structure
+            if (!enhanced || typeof enhanced !== 'object' || !Array.isArray(enhanced.potential_questions)) {
+                console.warn('Invalid enhancement result, using original questions:', enhanced);
+                return questions;
+            }
+            
+            return enhanced.potential_questions;
         } catch (error) {
             console.error('Enhancement failed:', error);
             return questions;
@@ -384,6 +426,13 @@ QUESTION: "${question}"`;
         
         try {
             const result = await this.callOpenAI([{ role: 'user', content: prompt }], 'gpt-4o-mini', true);
+            
+            // Validate result structure
+            if (!result || typeof result !== 'object' || typeof result.category !== 'string') {
+                console.warn('Invalid categorization result:', result);
+                return 'General';
+            }
+            
             return categories.includes(result.category) ? result.category : 'General';
         } catch (error) {
             console.error('Question categorization failed:', error);
@@ -417,6 +466,13 @@ QUESTIONS: ${JSON.stringify(questions)}`;
 
         try {
             const result = await this.callOpenAI([{ role: 'user', content: prompt }], 'gpt-4o-mini', true);
+            
+            // Validate result structure
+            if (!result || typeof result !== 'object') {
+                console.warn('Invalid prioritization result:', result);
+                return { main_question: null, secondary_question: null };
+            }
+            
             return {
                 main_question: result.main_question || null,
                 secondary_question: result.secondary_question || null
