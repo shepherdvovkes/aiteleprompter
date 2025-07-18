@@ -7,6 +7,8 @@ class App {
         this.audioManager = new AudioManager();
         this.speechManager = new SpeechRecognitionManager(this.audioManager);
         this.aiService = new AIService();
+        this.conversationManager = new ConversationManager();
+        this.uiManager = new UIManager();
         
         // UI Elements
         this.initializeUIElements();
@@ -17,6 +19,9 @@ class App {
         this.analysisQueue = [];
         this.lastProcessedQuestions = [];
         this.questionContext = '';
+        this.aiResponses = [];
+        this.sessionStartTime = null;
+        this.responseIdCounter = 0;
         
         // Initialize the application
         this.initialize();
@@ -27,6 +32,8 @@ class App {
         this.startButton = document.getElementById('startButton');
         this.stopButton = document.getElementById('stopButton');
         this.settingsButton = document.getElementById('settings-button');
+        this.saveConversationBtn = document.getElementById('save-conversation-btn');
+        this.clearSessionBtn = document.getElementById('clear-session-btn');
         
         // Status indicators
         this.statusLight = document.getElementById('status-light');
@@ -70,6 +77,10 @@ class App {
         this.modalSaveButton.addEventListener('click', () => this.saveSettings());
         this.modalCancelButton.addEventListener('click', () => this.hideSettings());
         
+        // Conversation management
+        this.saveConversationBtn.addEventListener('click', () => this.saveConversation());
+        this.clearSessionBtn.addEventListener('click', () => this.clearSession());
+        
         // Settings modal click outside to close
         this.settingsModal.addEventListener('click', (e) => {
             if (e.target === this.settingsModal) {
@@ -109,12 +120,58 @@ class App {
         
         this.aiService.setApiKey(apiKey);
         this.aiService.setConversationTopic(topic);
+        
+        // Check for session backup
+        this.checkSessionBackup();
+    }
+
+    checkSessionBackup() {
+        const backup = this.conversationManager.getSessionBackup();
+        if (backup && backup.lastSaved && (Date.now() - backup.lastSaved < 24 * 60 * 60 * 1000)) {
+            // Backup is less than 24 hours old
+            this.uiManager.showToast(
+                'Previous session backup found. Click to restore.', 
+                'info', 
+                10000
+            );
+            
+            // You could add a restore button here if needed
+            setTimeout(() => {
+                if (confirm('Restore previous session?')) {
+                    this.restoreSession(backup);
+                }
+            }, 2000);
+        }
+    }
+
+    restoreSession(backup) {
+        if (backup.transcript) {
+            this.rawConversationBuffer = backup.transcript;
+            backup.transcript.forEach(entry => {
+                this.addToTranscriptDisplay(entry.text || entry);
+            });
+        }
+        
+        if (backup.aiResponses) {
+            this.aiResponses = backup.aiResponses;
+            backup.aiResponses.forEach(response => {
+                this.displayRestoredAIResponse(response);
+            });
+        }
+        
+        this.uiManager.showSuccessMessage('Session restored successfully!');
+        this.conversationManager.clearSessionBackup();
     }
 
     async handleStart() {
         if (this.speechManager.isListening) return;
 
         try {
+            // Mark session start time
+            if (!this.sessionStartTime) {
+                this.sessionStartTime = Date.now();
+            }
+            
             // Update UI to show connecting state
             this.updateStatus('connecting', 'Connecting to API...');
             
@@ -199,8 +256,14 @@ class App {
         sentenceDiv.textContent = sentence;
         this.finalTranscriptDiv.appendChild(sentenceDiv);
         
+        // Add animation
+        this.uiManager.animateTranscriptEntry(sentenceDiv);
+        
         // Auto-scroll to bottom
         this.finalTranscriptDiv.scrollTop = this.finalTranscriptDiv.scrollHeight;
+        
+        // Auto-save session backup
+        this.saveSessionBackup();
     }
 
     async processForQuestions(sentence) {
@@ -232,9 +295,14 @@ class App {
         this.displayDetectedQuestions(questions);
     }
 
-    async generateAndDisplayResponse(question, context) {
+    async generateAndDisplayResponse(question, context, isRegeneration = false, existingResponseId = null) {
         try {
             this.showProgress(true);
+            
+            // Show queue indicator if there are pending requests
+            if (this.analysisQueue.length > 0) {
+                this.uiManager.showQueueIndicator(this.analysisQueue.length);
+            }
             
             const response = await this.aiService.generateResponse(
                 question, 
@@ -242,13 +310,18 @@ class App {
                 this.aiService.conversationTopic
             );
             
-            this.displayAIResponse(question, response);
+            if (isRegeneration && existingResponseId) {
+                this.updateExistingResponse(existingResponseId, question, response);
+            } else {
+                this.displayAIResponse(question, response);
+            }
             
         } catch (error) {
             console.error('Response generation failed:', error);
-            this.displayError('Failed to generate response');
+            this.uiManager.showErrorMessage('Failed to generate response: ' + error.message);
         } finally {
             this.showProgress(false);
+            this.uiManager.hideQueueIndicator();
         }
     }
 
@@ -276,29 +349,97 @@ class App {
             this.aiPlaceholder.remove();
         }
         
-        // Create response container
-        const responseDiv = document.createElement('div');
-        responseDiv.className = 'mb-4 p-4 bg-gray-700 rounded-lg';
+        // Generate unique response ID
+        const responseId = ++this.responseIdCounter;
         
-        // Question header
-        const questionHeader = document.createElement('div');
-        questionHeader.className = 'font-semibold text-blue-300 mb-2';
-        questionHeader.textContent = `Q: ${question}`;
+        // Create response using UI manager
+        const { container, regenerateBtn, responseEl } = this.uiManager.createResponseContainer(
+            question, 
+            this.formatResponse(response), 
+            responseId
+        );
         
-        // Response content
-        const responseContent = document.createElement('div');
-        responseContent.className = 'ai-response-content text-gray-200';
-        responseContent.innerHTML = this.formatResponse(response);
+        // Store response data
+        const responseData = {
+            id: responseId,
+            question,
+            response,
+            timestamp: Date.now(),
+            context: this.questionContext
+        };
+        this.aiResponses.push(responseData);
         
-        responseDiv.appendChild(questionHeader);
-        responseDiv.appendChild(responseContent);
-        this.aiResponseArea.appendChild(responseDiv);
+        // Set up regenerate button click handler
+        regenerateBtn.addEventListener('click', () => {
+            this.regenerateResponse(responseId, question, this.questionContext);
+        });
+        
+        // Add to display area
+        this.aiResponseArea.appendChild(container);
         
         // Render math and code
-        this.renderMathAndCode(responseContent);
+        this.renderMathAndCode(responseEl);
         
-        // Auto-scroll
-        this.aiResponseArea.scrollTop = this.aiResponseArea.scrollHeight;
+        // Auto-scroll with smooth animation
+        this.uiManager.smoothScrollTo(container);
+        
+        // Save session backup
+        this.saveSessionBackup();
+    }
+    
+    displayRestoredAIResponse(responseData) {
+        // Hide placeholder if visible
+        if (this.aiPlaceholder && this.aiPlaceholder.parentNode) {
+            this.aiPlaceholder.remove();
+        }
+        
+        const { container, regenerateBtn, responseEl } = this.uiManager.createResponseContainer(
+            responseData.question, 
+            this.formatResponse(responseData.response), 
+            responseData.id
+        );
+        
+        // Set up regenerate button click handler
+        regenerateBtn.addEventListener('click', () => {
+            this.regenerateResponse(responseData.id, responseData.question, responseData.context);
+        });
+        
+        this.aiResponseArea.appendChild(container);
+        this.renderMathAndCode(responseEl);
+    }
+
+    async regenerateResponse(responseId, question, context) {
+        this.uiManager.showInfoMessage('Regenerating response...');
+        await this.generateAndDisplayResponse(question, context, true, responseId);
+    }
+
+    updateExistingResponse(responseId, question, newResponse) {
+        // Find the response container
+        const container = document.querySelector(`[data-response-id="${responseId}"]`);
+        if (!container) return;
+        
+        // Update the response content
+        const responseEl = container.querySelector('.ai-response-content');
+        responseEl.innerHTML = this.formatResponse(newResponse);
+        
+        // Re-render math and code
+        this.renderMathAndCode(responseEl);
+        
+        // Update stored data
+        const responseData = this.aiResponses.find(r => r.id === responseId);
+        if (responseData) {
+            responseData.response = newResponse;
+            responseData.timestamp = Date.now();
+        }
+        
+        // Add flash effect to show update
+        container.style.backgroundColor = 'rgba(59, 130, 246, 0.2)';
+        setTimeout(() => {
+            container.style.backgroundColor = '';
+        }, 1000);
+        
+        this.uiManager.showSuccessMessage('Response regenerated!');
+        this.saveSessionBackup();
     }
 
     formatResponse(text) {
@@ -384,10 +525,83 @@ class App {
     handleVisibilityChange() {
         if (document.hidden && !this.speechManager.isListening) {
             console.log('Page hidden, keeping resources for quick restart');
+            this.saveSessionBackup();
+        }
+    }
+
+    saveSessionBackup() {
+        if (this.rawConversationBuffer.length === 0 && this.aiResponses.length === 0) {
+            return; // Nothing to save
+        }
+        
+        const sessionData = {
+            transcript: this.rawConversationBuffer.map(text => ({ text, timestamp: Date.now() })),
+            aiResponses: this.aiResponses,
+            questions: this.lastProcessedQuestions,
+            topic: this.aiService.conversationTopic,
+            language: this.languageSelect.value,
+            sessionStartTime: this.sessionStartTime
+        };
+        
+        this.conversationManager.saveSessionBackup(sessionData);
+    }
+
+    async saveConversation() {
+        try {
+            if (this.rawConversationBuffer.length === 0 && this.aiResponses.length === 0) {
+                this.uiManager.showInfoMessage('No conversation to save');
+                return;
+            }
+            
+            const duration = this.sessionStartTime ? Date.now() - this.sessionStartTime : 0;
+            
+            const conversationData = {
+                transcript: this.rawConversationBuffer.map(text => ({ text, timestamp: Date.now() })),
+                aiResponses: this.aiResponses,
+                questions: this.lastProcessedQuestions,
+                topic: this.aiService.conversationTopic,
+                language: this.languageSelect.value,
+                duration
+            };
+            
+            const savedConversation = await this.conversationManager.saveConversation(conversationData);
+            this.uiManager.showSuccessMessage(`Conversation saved: ${savedConversation.title}`);
+            
+            // Clear session backup since we've saved permanently
+            this.conversationManager.clearSessionBackup();
+            
+        } catch (error) {
+            console.error('Failed to save conversation:', error);
+            this.uiManager.showErrorMessage('Failed to save conversation');
+        }
+    }
+
+    async clearSession() {
+        if (confirm('Clear current session? This will remove all transcript and AI responses.')) {
+            // Clear UI
+            this.finalTranscriptDiv.innerHTML = '';
+            this.aiResponseArea.innerHTML = '';
+            this.aiResponseArea.appendChild(this.aiPlaceholder);
+            this.interimTranscriptDiv.textContent = '...';
+            
+            // Reset state
+            this.rawConversationBuffer = [];
+            this.aiResponses = [];
+            this.analysisQueue = [];
+            this.lastProcessedQuestions = [];
+            this.questionContext = '';
+            this.sessionStartTime = null;
+            this.responseIdCounter = 0;
+            
+            // Clear backup
+            this.conversationManager.clearSessionBackup();
+            
+            this.uiManager.showSuccessMessage('Session cleared');
         }
     }
 
     cleanup() {
+        this.saveSessionBackup();
         this.speechManager.cleanup();
         this.audioManager.cleanup();
         console.log('Application cleaned up');
