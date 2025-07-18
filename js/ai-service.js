@@ -94,58 +94,274 @@ class AIService {
     }
 
     async identifyQuestions(textBlock, conversationContext = '') {
+        // First, let's do a multi-step analysis for better accuracy
+        const analysis = await this.performSemanticAnalysis(textBlock, conversationContext);
+        return analysis.questions;
+    }
+
+    async performSemanticAnalysis(textBlock, conversationContext = '') {
         const contextInstruction = conversationContext ? 
-            `\n\nCONVERSATION CONTEXT (previous sentences): """${conversationContext}"""\n\n` : '';
+            `\n\nPREVIOUS CONVERSATION CONTEXT: """${conversationContext}"""\n` : '';
         
-        const prompt = `You are an expert at identifying questions and requests in technical interview contexts. Your task is to identify ALL user questions, requests, and implicit queries in the text, including:${contextInstruction}
+        // Step 1: Deep semantic analysis
+        const semanticPrompt = `You are an advanced natural language analyzer specializing in question detection across multiple languages (primarily English and Russian). Your task is to perform deep semantic analysis to identify all forms of questions, requests, and implicit queries.
 
-1. DIRECT QUESTIONS: Traditional questions ending with "?" 
-2. IMPLICIT QUESTIONS: Statements that expect a response or explanation:
-   - "Tell me about..." / "Расскажите о..."
-   - "Explain..." / "Объясните..."  
-   - "Show me how..." / "Покажите как..."
-   - "Walk me through..." / "Проведите меня через..."
-   - "What do you think about..." / "Что вы думаете о..."
-   - "How would you..." / "Как бы вы..."
-   - "Can you..." / "Можете ли вы..."
-   - "Could you..." / "Не могли бы вы..."
-   - "Would you..." / "Хотели бы вы..."
+ANALYZE THE FOLLOWING for questions and requests:${contextInstruction}
 
-3. TECHNICAL INTERVIEW PATTERNS:
-   - "Implement a..." / "Реализуйте..."
-   - "Design a system..." / "Спроектируйте систему..."
-   - "Write a function..." / "Напишите функцию..."
-   - "Optimize this..." / "Оптимизируйте это..."
-   - "Debug this code..." / "Отладьте этот код..."
-   - "Compare X and Y..." / "Сравните X и Y..."
-   - "What's the difference between..." / "В чём разница между..."
-   - "Pros and cons of..." / "Плюсы и минусы..."
+DETECTION STRATEGY:
+1. SEMANTIC ANALYSIS: Look beyond keywords - analyze the intent and expectation behind each sentence
+2. CONTEXT INTEGRATION: Consider how each sentence relates to previous ones
+3. CULTURAL PATTERNS: Account for different questioning styles in English vs Russian
+4. IMPLICIT REQUESTS: Identify statements that clearly expect a response or explanation
+5. TECHNICAL DISCOURSE: Recognize technical interview patterns and coding challenges
 
-4. CONTEXTUAL ANALYSIS: If a statement seems incomplete or refers to previous context (like "Why?", "How?", "What about X?"), combine it with 2-3 preceding sentences to form a complete, standalone question.
+QUESTION TYPES TO DETECT:
 
-5. IMPERATIVE STATEMENTS: Commands that imply a question or request for explanation:
-   - "Consider this scenario..." / "Рассмотрите этот сценарий..."
-   - "Assume we have..." / "Предположим, у нас есть..."
-   - "Let's say..." / "Допустим..."
+A. EXPLICIT QUESTIONS:
+   - Direct interrogatives (what, where, when, why, how, who)
+   - Yes/no questions (do, does, did, can, could, would, should, will)
+   - Choice questions (which, whether, either/or)
 
-IMPORTANT RULES:
-- If a question is short and lacks context (e.g., "why?", "how?"), MUST combine it with preceding sentences
-- For technical terms, assume they are part of an interview question
-- Include statements that expect demonstration of knowledge
-- Consider cultural context (Russian vs English phrasing patterns)
-- If someone mentions a technology/concept and then asks for clarification, treat the whole segment as one question
+B. IMPLICIT QUESTIONS (statements expecting responses):
+   - Explanatory requests: "I'd like to understand...", "Help me with..."
+   - Demonstrative requests: "Show the implementation", "Walk through the process"
+   - Comparative requests: "Compare these approaches", "What's better"
+   - Opinion seeking: "Your thoughts on...", "What do you think"
+   - Clarification seeking: mentions of concepts without explanation
 
-Return ONLY a valid JSON object with a key "potential_questions", which is an array of objects, each with a "text" key containing the full, contextual question and a "type" key indicating the question type ("direct", "implicit", "technical", "contextual"). If no questions are found, return an empty array.
+C. TECHNICAL INTERVIEW PATTERNS:
+   - Implementation challenges: "Write/code/implement/create/build..."
+   - System design: "Design/architect/scale..." 
+   - Problem solving: "How would you solve/approach/handle..."
+   - Code analysis: "Debug/optimize/refactor/improve..."
+   - Knowledge verification: "Explain the concept of...", "What is..."
 
-TEXT: """${textBlock}"""`;
-        
+D. CONTEXTUAL QUESTIONS:
+   - Short responses that reference previous context: "Why?", "How so?", "Really?"
+   - Follow-up inquiries that need previous sentences for full context
+   - Incomplete thoughts that expect elaboration
+
+E. CONVERSATIONAL CUES:
+   - Statements ending with implicit question marks (rising intonation patterns)
+   - Tentative statements seeking confirmation: "I think...", "Maybe...", "Probably..."
+   - Uncertainty expressions: "I'm not sure about...", "I don't understand..."
+
+ANALYSIS PROCESS:
+1. Parse each sentence for semantic intent
+2. Identify expectation of response or explanation
+3. Combine fragmented questions with necessary context
+4. Classify the type and urgency of each question
+5. Consider technical vs non-technical context
+
+For SHORT QUESTIONS lacking context (like "Why?", "How?", "What about X?"), you MUST:
+- Combine with 2-3 preceding sentences to create a complete, standalone question
+- Preserve the original intent while adding necessary context
+
+Return a JSON object with:
+{
+  "potential_questions": [
+    {
+      "text": "Complete, contextual question text",
+      "type": "direct|implicit|technical|contextual|conversational",
+      "confidence": 0.0-1.0,
+      "requires_context": true|false,
+      "technical_level": "basic|intermediate|advanced|expert",
+      "original_fragment": "original text if modified"
+    }
+  ],
+  "overall_intent": "question|statement|mixed|unclear",
+  "language_detected": "en|ru|mixed",
+  "conversation_flow": "new_topic|follow_up|clarification|response_expected"
+}
+
+TEXT TO ANALYZE: """${textBlock}"""`;
+
         try {
-            const result = await this.callOpenAI([{ role: 'user', content: prompt }], 'gpt-4o-mini', true);
-            return result.potential_questions || [];
+            const semanticResult = await this.callOpenAI([{ role: 'user', content: semanticPrompt }], 'gpt-4o', true);
+            
+            // Step 2: Validate and enhance results with linguistic patterns
+            const enhancedQuestions = await this.enhanceWithLinguisticAnalysis(
+                semanticResult.potential_questions || [], 
+                textBlock, 
+                conversationContext
+            );
+            
+            return {
+                questions: enhancedQuestions,
+                overall_intent: semanticResult.overall_intent || 'unclear',
+                language_detected: semanticResult.language_detected || 'en',
+                conversation_flow: semanticResult.conversation_flow || 'new_topic'
+            };
+            
         } catch (error) {
-            console.error('Question identification failed:', error);
-            return [];
+            console.error('Semantic analysis failed:', error);
+            // Fallback to enhanced pattern matching
+            return this.fallbackQuestionDetection(textBlock, conversationContext);
         }
+    }
+
+    async enhanceWithLinguisticAnalysis(questions, textBlock, conversationContext) {
+        // Additional linguistic validation and enhancement
+        const enhancementPrompt = `Review and enhance these detected questions for accuracy and completeness. 
+
+ORIGINAL TEXT: """${textBlock}"""
+CONTEXT: """${conversationContext}"""
+
+DETECTED QUESTIONS: ${JSON.stringify(questions)}
+
+Your task:
+1. Verify each question is actually a question or request
+2. Ensure questions have sufficient context to be standalone
+3. Merge related fragments into coherent questions
+4. Remove false positives (statements that don't expect responses)
+5. Add any missed implicit questions
+6. Adjust confidence scores based on clarity and context
+
+Return the same JSON structure with improved questions.`;
+
+        try {
+            const enhanced = await this.callOpenAI([{ role: 'user', content: enhancementPrompt }], 'gpt-4o-mini', true);
+            return enhanced.potential_questions || questions;
+        } catch (error) {
+            console.error('Enhancement failed:', error);
+            return questions;
+        }
+    }
+
+    fallbackQuestionDetection(textBlock, conversationContext) {
+        // Enhanced pattern-based fallback when AI analysis fails
+        const questions = [];
+        const sentences = this.splitIntoSentences(textBlock);
+        
+        for (let i = 0; i < sentences.length; i++) {
+            const sentence = sentences[i].trim();
+            const analysis = this.analyzeSentencePatterns(sentence, sentences, i, conversationContext);
+            
+            if (analysis.isQuestion) {
+                questions.push({
+                    text: analysis.questionText,
+                    type: analysis.type,
+                    confidence: analysis.confidence,
+                    requires_context: analysis.requiresContext,
+                    technical_level: analysis.technicalLevel
+                });
+            }
+        }
+        
+        return {
+            questions: questions,
+            overall_intent: questions.length > 0 ? 'question' : 'statement',
+            language_detected: this.detectLanguage(textBlock),
+            conversation_flow: 'new_topic'
+        };
+    }
+
+    splitIntoSentences(text) {
+        // Enhanced sentence splitting that handles various punctuation and languages
+        return text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    }
+
+    analyzeSentencePatterns(sentence, allSentences, index, context) {
+        const lowerSentence = sentence.toLowerCase();
+        let isQuestion = false;
+        let type = 'statement';
+        let confidence = 0.0;
+        let requiresContext = false;
+        let technicalLevel = 'basic';
+        let questionText = sentence;
+
+        // Enhanced pattern matching with confidence scoring
+        const patterns = {
+            direct: {
+                regex: /^(what|where|when|why|how|who|which|whose|whom|do|does|did|can|could|would|should|will|is|are|was|were|have|has|had|дайте|скажите|что|где|когда|почему|как|кто|какой|чей|делать|может|мог|будет|является|есть|был|имеет)/i,
+                confidence: 0.95
+            },
+            questionMark: {
+                regex: /\?$/,
+                confidence: 0.98
+            },
+            imperative: {
+                regex: /^(tell me|show me|explain|describe|implement|write|code|create|build|design|compare|walk through|расскажи|покажи|объясни|опиши|реализуй|напиши|создай|построй|спроектируй|сравни)/i,
+                confidence: 0.85
+            },
+            technical: {
+                regex: /(algorithm|function|code|programming|software|system|database|api|framework|library|class|object|variable|loop|condition|алгоритм|функция|код|программирование|система|база данных|фреймворк|библиотека|класс|объект|переменная|цикл|условие)/i,
+                confidence: 0.8
+            },
+            short: {
+                regex: /^(why|how|what|really|true|sure|почему|как|что|правда|точно)[\?\.]?$/i,
+                confidence: 0.7,
+                needsContext: true
+            },
+            uncertainty: {
+                regex: /(i don't understand|i'm not sure|unclear|confused|help|не понимаю|не уверен|неясно|запутался|помощь)/i,
+                confidence: 0.75
+            }
+        };
+
+        // Check each pattern
+        for (const [patternType, pattern] of Object.entries(patterns)) {
+            if (pattern.regex.test(lowerSentence)) {
+                isQuestion = true;
+                type = patternType === 'technical' ? 'technical' : 
+                      patternType === 'short' ? 'contextual' : 
+                      patternType === 'questionMark' ? 'direct' : 'implicit';
+                confidence = Math.max(confidence, pattern.confidence);
+                
+                if (pattern.needsContext || patternType === 'short') {
+                    requiresContext = true;
+                    // Add context from previous sentences
+                    const contextSentences = allSentences.slice(Math.max(0, index - 2), index);
+                    if (contextSentences.length > 0) {
+                        questionText = contextSentences.join(' ') + ' ' + sentence;
+                    }
+                }
+                
+                if (patterns.technical.regex.test(lowerSentence)) {
+                    technicalLevel = 'intermediate';
+                }
+                break;
+            }
+        }
+
+        // Additional heuristics for missed patterns
+        if (!isQuestion) {
+            // Check for statements that end with expectation
+            if (this.hasImplicitExpectation(sentence)) {
+                isQuestion = true;
+                type = 'implicit';
+                confidence = 0.6;
+            }
+        }
+
+        return {
+            isQuestion,
+            questionText,
+            type,
+            confidence,
+            requiresContext,
+            technicalLevel
+        };
+    }
+
+    hasImplicitExpectation(sentence) {
+        const expectationPatterns = [
+            /let me know/i,
+            /i'd like to know/i,
+            /i want to understand/i,
+            /help me with/i,
+            /хочу знать/i,
+            /хотел бы понять/i,
+            /помоги с/i
+        ];
+        
+        return expectationPatterns.some(pattern => pattern.test(sentence));
+    }
+
+    detectLanguage(text) {
+        const russianChars = (text.match(/[а-яё]/gi) || []).length;
+        const totalChars = text.replace(/\s/g, '').length;
+        return russianChars / totalChars > 0.3 ? 'ru' : 'en';
     }
 
     async categorizeQuestion(question, context) {
@@ -248,16 +464,30 @@ QUESTIONS: ${JSON.stringify(questions)}`;
         this.isProcessing = true;
 
         try {
-            // Identify questions in the text
-            const questions = await this.identifyQuestions(textBlock, conversationContext);
+            // Perform advanced semantic analysis
+            const analysis = await this.performSemanticAnalysis(textBlock, conversationContext);
             
-            if (questions.length === 0) {
+            if (!analysis.questions || analysis.questions.length === 0) {
+                // Log analysis result for debugging
+                console.log('No questions detected:', { 
+                    text: textBlock,
+                    intent: analysis.overall_intent,
+                    language: analysis.language_detected,
+                    flow: analysis.conversation_flow
+                });
+                return null;
+            }
+
+            // Filter out low-confidence questions if necessary
+            const validQuestions = analysis.questions.filter(q => q.confidence > 0.5);
+            
+            if (validQuestions.length === 0) {
                 return null;
             }
 
             // Categorize and prioritize questions
             const categorizedQuestions = await Promise.all(
-                questions.map(async (q) => ({
+                validQuestions.map(async (q) => ({
                     ...q,
                     category: await this.categorizeQuestion(q.text, conversationContext)
                 }))
@@ -267,12 +497,18 @@ QUESTIONS: ${JSON.stringify(questions)}`;
 
             return {
                 questions: categorizedQuestions,
-                priority: prioritized
+                priority: prioritized,
+                analysis_metadata: {
+                    overall_intent: analysis.overall_intent,
+                    language_detected: analysis.language_detected,
+                    conversation_flow: analysis.conversation_flow
+                }
             };
 
         } catch (error) {
             console.error('Text analysis failed:', error);
-            return null;
+            // Enhanced fallback - try basic pattern matching
+            return await this.basicFallbackAnalysis(textBlock, conversationContext);
         } finally {
             this.isProcessing = false;
             
@@ -281,6 +517,42 @@ QUESTIONS: ${JSON.stringify(questions)}`;
                 const next = this.requestQueue.shift();
                 setTimeout(() => this.processTextAnalysis(next.textBlock, next.conversationContext), 100);
             }
+        }
+    }
+
+    async basicFallbackAnalysis(textBlock, conversationContext) {
+        try {
+            console.log('Using basic fallback analysis for:', textBlock);
+            
+            // Use the enhanced fallback detection
+            const fallbackResult = this.fallbackQuestionDetection(textBlock, conversationContext);
+            
+            if (fallbackResult.questions.length === 0) {
+                return null;
+            }
+
+            // Simple categorization for fallback
+            const categorizedQuestions = fallbackResult.questions.map(q => ({
+                ...q,
+                category: q.technical_level === 'basic' ? 'General' : 'Technical'
+            }));
+
+            return {
+                questions: categorizedQuestions,
+                priority: {
+                    main_question: categorizedQuestions[0]?.text || null,
+                    secondary_question: categorizedQuestions[1]?.text || null
+                },
+                analysis_metadata: {
+                    overall_intent: fallbackResult.overall_intent,
+                    language_detected: fallbackResult.language_detected,
+                    conversation_flow: fallbackResult.conversation_flow,
+                    fallback_used: true
+                }
+            };
+        } catch (error) {
+            console.error('Even fallback analysis failed:', error);
+            return null;
         }
     }
 
