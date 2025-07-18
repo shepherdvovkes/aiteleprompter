@@ -34,7 +34,10 @@ describe('Server Integration Tests', () => {
         });
 
       expect(response.status).toBe(500);
-      expect(response.body).toEqual({ error: 'OPENAI_API_KEY not set' });
+      expect(response.body).toEqual({ 
+        error: 'OPENAI_API_KEY not set',
+        message: 'Server configuration error. Please contact administrator.'
+      });
     });
 
     test('should serve static files', async () => {
@@ -82,7 +85,10 @@ describe('Server Integration Tests', () => {
 
       // Without API key, should return 500
       expect(response.status).toBe(500);
-      expect(response.body).toEqual({ error: 'OPENAI_API_KEY not set' });
+      expect(response.body).toEqual({ 
+        error: 'OPENAI_API_KEY not set',
+        message: 'Server configuration error. Please contact administrator.'
+      });
     });
 
     test('should handle GET requests to non-API routes', async () => {
@@ -117,7 +123,10 @@ describe('Server Integration Tests', () => {
 
       // Should fail due to missing API key, not content type
       expect(response.status).toBe(500);
-      expect(response.body).toEqual({ error: 'OPENAI_API_KEY not set' });
+      expect(response.body).toEqual({ 
+        error: 'OPENAI_API_KEY not set',
+        message: 'Server configuration error. Please contact administrator.'
+      });
     });
 
     test('should handle empty request body', async () => {
@@ -127,7 +136,10 @@ describe('Server Integration Tests', () => {
 
       // Should fail due to missing API key
       expect(response.status).toBe(500);
-      expect(response.body).toEqual({ error: 'OPENAI_API_KEY not set' });
+      expect(response.body).toEqual({ 
+        error: 'OPENAI_API_KEY not set',
+        message: 'Server configuration error. Please contact administrator.'
+      });
     });
   });
 
@@ -153,7 +165,10 @@ describe('Server Integration Tests', () => {
 
       // Should fail due to missing API key first
       expect(response.status).toBe(500);
-      expect(response.body).toEqual({ error: 'OPENAI_API_KEY not set' });
+      expect(response.body).toEqual({ 
+        error: 'OPENAI_API_KEY not set',
+        message: 'Server configuration error. Please contact administrator.'
+      });
     });
 
     test('should handle invalid JSON structure', async () => {
