@@ -7,7 +7,8 @@
     "start": "node server.js",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "test:verbose": "jest --verbose"
   },
   "dependencies": {
     "dotenv": "^16.3.1",
@@ -22,28 +23,39 @@
     "supertest": "^6.3.3"
   },
   "jest": {
-    "testEnvironment": "node",
-    "coverageDirectory": "coverage",
     "collectCoverageFrom": [
       "server.js",
       "js/**/*.js",
       "!tests/**/*.js",
-      "!node_modules/**"
+      "!node_modules/**",
+      "!coverage/**"
     ],
+    "coverageReporters": [
+      "text",
+      "lcov",
+      "html"
+    ],
+    "coverageDirectory": "coverage",
     "projects": [
       {
         "displayName": "server",
         "testMatch": [
           "<rootDir>/tests/server/**/*.test.js"
         ],
-        "testEnvironment": "node"
+        "testEnvironment": "node",
+        "collectCoverageFrom": [
+          "server.js"
+        ]
       },
       {
         "displayName": "client",
         "testMatch": [
           "<rootDir>/tests/client/**/*.test.js"
         ],
-        "testEnvironment": "jsdom"
+        "testEnvironment": "jsdom",
+        "collectCoverageFrom": [
+          "js/**/*.js"
+        ]
       }
     ]
   }
