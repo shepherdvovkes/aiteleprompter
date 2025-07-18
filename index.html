@@ -61,14 +61,7 @@
                 <input type="text" id="modal-topic-input" class="w-full bg-gray-900 border border-gray-600 rounded-md p-2 text-gray-200 focus:ring-2 focus:ring-blue-500" placeholder="Solidity, finance ...">
                 <p class="text-xs text-gray-500 mt-2">Provide a general topic for more accurate answers.</p>
             </div>
-            <div>
-                <label for="modal-person1-input" class="block text-sm font-medium text-gray-300 mb-2">Имя человека у микрофона:</label>
-                <input type="text" id="modal-person1-input" class="w-full bg-gray-900 border border-gray-600 rounded-md p-2 text-gray-200 focus:ring-2 focus:ring-blue-500" placeholder="Person 1">
-            </div>
-            <div>
-                <label for="modal-person2-input" class="block text-sm font-medium text-gray-300 mb-2">Имя удаленного собеседника:</label>
-                <input type="text" id="modal-person2-input" class="w-full bg-gray-900 border border-gray-600 rounded-md p-2 text-gray-200 focus:ring-2 focus:ring-blue-500" placeholder="Person 2">
-            </div>
+
             <div class="flex justify-end space-x-4">
                 <button id="modal-cancel-button" class="px-4 py-2 rounded-md text-gray-300 hover:bg-gray-700 transition-colors">Cancel</button>
                 <button id="modal-save-button" class="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors">Save</button>
@@ -92,18 +85,13 @@
     const settingsButton = document.getElementById('settings-button');
     const modalApiKeyInput = document.getElementById('modal-apiKey-input');
     const modalTopicInput = document.getElementById('modal-topic-input');
-    const modalPerson1Input = document.getElementById('modal-person1-input');
-    const modalPerson2Input = document.getElementById('modal-person2-input');
+
     const currentSpeakerDiv = document.getElementById('current-speaker');
     const modalSaveButton = document.getElementById('modal-save-button');
     const modalCancelButton = document.getElementById('modal-cancel-button');
     
     let openAIApiKey = localStorage.getItem('openai_api_key') || '';
     let conversationTopic = localStorage.getItem('conversation_topic') || '';
-    let person1Name = localStorage.getItem('person1_name') || 'Person 1';
-    let person2Name = localStorage.getItem('person2_name') || 'Person 2';
-    let person1Volume = 0;
-    let person2Volume = 0;
     let audioContext, analyser, volumeInterval, volumeHistory = [];
 
     let rawConversationBuffer = [];
@@ -225,13 +213,7 @@
         return sum / (volumeHistory.length || 1);
     };
 
-    const calibrateSpeakers = async () => {
-        currentSpeakerDiv.textContent = `Калибровка: ${person1Name}`;
-        person1Volume = await measureAvgVolume(10);
-        currentSpeakerDiv.textContent = `Калибровка: ${person2Name}`;
-        person2Volume = await measureAvgVolume(10);
-        currentSpeakerDiv.textContent = 'Калибровка завершена';
-    };
+
 
     const testApiConnection = async () => {
         if (!openAIApiKey) return;
@@ -339,8 +321,6 @@
     settingsButton.addEventListener('click', () => {
         modalApiKeyInput.value = openAIApiKey;
         modalTopicInput.value = conversationTopic;
-        modalPerson1Input.value = person1Name;
-        modalPerson2Input.value = person2Name;
         settingsModal.classList.remove('hidden');
         settingsModal.classList.add('flex');
     });
@@ -349,12 +329,8 @@
     modalSaveButton.addEventListener('click', () => {
         openAIApiKey = modalApiKeyInput.value.trim();
         conversationTopic = modalTopicInput.value.trim();
-        person1Name = modalPerson1Input.value.trim() || 'Person 1';
-        person2Name = modalPerson2Input.value.trim() || 'Person 2';
         localStorage.setItem('openai_api_key', openAIApiKey);
         localStorage.setItem('conversation_topic', conversationTopic);
-        localStorage.setItem('person1_name', person1Name);
-        localStorage.setItem('person2_name', person2Name);
         if(openAIApiKey) {
             console.log("API Key saved.");
         } else {
@@ -385,7 +361,6 @@
         isListening = true;
         hasStartedBefore = false;
         recognition.start();
-        calibrateSpeakers();
     });
     
     let shouldRestart = false;
@@ -463,9 +438,7 @@
                             }
                         }, SENTENCE_PAUSE_THRESHOLD);
                     }
-                    const vol = getCurrentAvgVolume();
-                    const speaker = vol > (person1Volume + person2Volume) / 2 ? person1Name : person2Name;
-                    currentSpeakerDiv.textContent = `Speaker: ${speaker}`;
+                    currentSpeakerDiv.textContent = 'Recording...';
                 }
             } else {
                 interim_transcript += transcriptPart;
