@@ -158,7 +158,8 @@
     const finalizeSentence = (sentence) => {
         sentence = sentence.trim();
         if (!sentence || sentence === lastLoggedSentence) return;
-        lockedInterim = sentence;
+        // Очищаем промежуточные переменные чтобы избежать дублирования
+        lockedInterim = '';
         interimText = '';
         rawConversationBuffer.push(sentence);
         analysisQueue.push({ text: rawConversationBuffer.join(' '), raw: sentence });
@@ -296,10 +297,9 @@
     function renderSpecialContent(element) { const rawText = element.textContent; const parts = rawText.split('```'); let html = ''; for (let i = 0; i < parts.length; i++) { if (i % 2 === 0) { html += parts[i]; } else { let codeBlock = parts[i]; let langMatch = codeBlock.match(/^(\w+)\n/); let lang = langMatch ? langMatch[1] : 'plaintext'; let code = langMatch ? codeBlock.substring(lang.length + 1) : codeBlock; html += `<pre><code class="language-${lang}">${escapeHtml(code)}</code></pre>`; } } element.innerHTML = html; if (window.renderMathInElement) { renderMathInElement(element, { delimiters: [ {left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false} ], throwOnError: false }); } element.querySelectorAll('pre code').forEach((block) => { hljs.highlightElement(block); }); }
     const displayPunctuatedLog = (text, raw) => {
         if (!text || text === lastLoggedSentence) {
-            if (lockedInterim.trim() === raw.trim()) {
-                lockedInterim = '';
-                updateInterimDisplay();
-            }
+            // Очищаем промежуточные переменные
+            lockedInterim = '';
+            updateInterimDisplay();
             return;
         }
         lastLoggedSentence = text;
@@ -308,10 +308,9 @@
         entry.textContent = text;
         finalTranscriptDiv.appendChild(entry);
         finalTranscriptDiv.scrollTop = finalTranscriptDiv.scrollHeight;
-        if (lockedInterim.trim() === raw.trim()) {
-            lockedInterim = '';
-            updateInterimDisplay();
-        }
+        // Очищаем промежуточные переменные после добавления в лог
+        lockedInterim = '';
+        updateInterimDisplay();
     };
     const categoryClassMap = { 'Technical': 'technical', 'General': 'general', 'Personal': 'personal', 'Financial': 'financial' };
     const updateLogWithTag = (questionText, category) => { const allLogs = finalTranscriptDiv.getElementsByTagName('div'); for (let log of allLogs) { if (log.textContent.includes(questionText) && !log.querySelector('.q-tag')) { const tag = document.createElement('span'); const cssClass = categoryClassMap[category] || 'general'; tag.className = `q-tag tag-${cssClass}`; tag.textContent = category; log.innerHTML = log.innerHTML.replace(questionText, `<span class="q-tag-parent">${tag.outerHTML}${questionText}</span>`); break; } } finalTranscriptDiv.scrollTop = finalTranscriptDiv.scrollHeight; };
@@ -378,6 +377,12 @@
             if (aiPlaceholder) aiPlaceholder.style.display = 'block';
             rawConversationBuffer = [];
             analysisQueue.length = 0;
+            // Очищаем все промежуточные переменные для предотвращения дублирования
+            partialSentence = '';
+            lockedInterim = '';
+            interimText = '';
+            lastLoggedSentence = '';
+            updateInterimDisplay();
             hasStartedBefore = true;
         }
         clearInterval(periodicTimer);
@@ -413,6 +418,10 @@
         statusLight.className = 'w-3 h-3 rounded-full bg-red-500';
         isListening = false;
         hasStartedBefore = false;
+        // Очищаем промежуточные переменные при остановке
+        lockedInterim = '';
+        interimText = '';
+        updateInterimDisplay();
         scheduleAnalysis();
     };
     recognition.onerror = (event) => { console.error('Speech recognition error:', event.error); statusText.textContent = `Error: ${event.error}`; };
