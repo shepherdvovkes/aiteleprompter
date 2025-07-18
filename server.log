@@ -1,0 +1,8 @@
+nohup: ignoring input
+
+> aiteleprompter-server@1.0.0 start
+> node server.js
+
+Server running at http://localhost:3000
+Cache TTL: 600s
+OpenAI API error 401: Incorrect API key provided: sk-proj-*********gjhg. You can find your API key at https://platform.openai.com/account/api-keys.
