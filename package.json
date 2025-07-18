@@ -26,8 +26,9 @@
     "coverageDirectory": "coverage",
     "collectCoverageFrom": [
       "server.js",
-      "tests/**/*.js",
-      "!tests/**/*.test.js"
+      "js/**/*.js",
+      "!tests/**/*.js",
+      "!node_modules/**"
     ],
     "projects": [
       {
