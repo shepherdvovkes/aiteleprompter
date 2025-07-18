@@ -185,6 +185,9 @@ describe('Server API Tests', () => {
     test('should handle network errors', async () => {
       process.env.OPENAI_API_KEY = 'test-api-key';
       
+      // Mock console.error to suppress expected error logging during test
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      
       global.fetch = jest.fn().mockRejectedValue(new Error('Network error'));
 
       const response = await request(app)
@@ -196,6 +199,14 @@ describe('Server API Tests', () => {
 
       expect(response.status).toBe(500);
       expect(response.body).toEqual({ error: 'Server error' });
+      
+      // Verify that console.error was called with the expected error
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.objectContaining({
+        message: 'Network error'
+      }));
+      
+      // Restore console.error
+      consoleErrorSpy.mockRestore();
     });
   });
 
