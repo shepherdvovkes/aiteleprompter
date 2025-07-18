@@ -4,11 +4,42 @@
   "description": "Simple server for AI Teleprompter",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "dependencies": {
     "dotenv": "^16.3.1",
     "express": "^4.19.2",
     "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.3",
+    "@types/jest": "^29.5.8",
+    "jsdom": "^23.0.1",
+    "jest-environment-jsdom": "^29.7.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "coverageDirectory": "coverage",
+    "collectCoverageFrom": [
+      "server.js",
+      "tests/**/*.js",
+      "!tests/**/*.test.js"
+    ],
+    "projects": [
+      {
+        "displayName": "server",
+        "testMatch": ["<rootDir>/tests/server/**/*.test.js"],
+        "testEnvironment": "node"
+      },
+      {
+        "displayName": "client",
+        "testMatch": ["<rootDir>/tests/client/**/*.test.js"],
+        "testEnvironment": "jsdom"
+      }
+    ]
   }
 }
