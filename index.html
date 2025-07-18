@@ -201,17 +201,9 @@
         volumeHistory = [];
     };
 
-    const measureAvgVolume = async (seconds) => {
-        volumeHistory = [];
-        await new Promise(res => setTimeout(res, seconds * 1000));
-        const sum = volumeHistory.reduce((a, b) => a + b, 0);
-        return sum / (volumeHistory.length || 1);
-    };
 
-    const getCurrentAvgVolume = () => {
-        const sum = volumeHistory.reduce((a, b) => a + b, 0);
-        return sum / (volumeHistory.length || 1);
-    };
+
+
 
 
 
