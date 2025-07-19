@@ -43,6 +43,28 @@ class AIService {
     }
 
     async callOpenAI(messages, model = 'gpt-4o-mini', needsJson = false) {
+        // Validate messages array
+        if (!Array.isArray(messages)) {
+            throw new Error(`Messages must be an array, got ${typeof messages}`);
+        }
+        
+        // Validate each message
+        messages.forEach((msg, index) => {
+            if (!msg || typeof msg !== 'object') {
+                throw new Error(`Message[${index}] must be an object, got ${typeof msg}`);
+            }
+            if (!msg.role || typeof msg.role !== 'string') {
+                throw new Error(`Message[${index}].role must be a string, got ${typeof msg.role}`);
+            }
+            if (msg.content === undefined || msg.content === null) {
+                throw new Error(`Message[${index}].content is missing`);
+            }
+            if (typeof msg.content !== 'string' && !Array.isArray(msg.content)) {
+                console.error(`Invalid content type for message[${index}]:`, typeof msg.content, msg.content);
+                throw new Error(`Message[${index}].content must be a string or array, got ${typeof msg.content}`);
+            }
+        });
+
         const body = {
             model,
             messages,
@@ -113,6 +135,17 @@ class AIService {
     }
 
     async performSemanticAnalysis(textBlock, conversationContext = '') {
+        // Validate inputs
+        if (typeof textBlock !== 'string') {
+            console.error('TextBlock is not a string:', typeof textBlock, textBlock);
+            throw new Error(`TextBlock must be a string, got ${typeof textBlock}`);
+        }
+        
+        if (typeof conversationContext !== 'string') {
+            console.error('ConversationContext is not a string:', typeof conversationContext, conversationContext);
+            throw new Error(`ConversationContext must be a string, got ${typeof conversationContext}`);
+        }
+
         const contextInstruction = conversationContext ? 
             `\n\nPREVIOUS CONVERSATION CONTEXT: """${conversationContext}"""\n` : '';
         
@@ -190,6 +223,12 @@ Return a JSON object with:
 TEXT TO ANALYZE: """${textBlock}"""`;
 
         try {
+            // Validate prompt before sending
+            if (typeof semanticPrompt !== 'string') {
+                console.error('Semantic prompt is not a string:', typeof semanticPrompt, semanticPrompt);
+                throw new Error(`Semantic prompt must be a string, got ${typeof semanticPrompt}`);
+            }
+            
             const semanticResult = await this.callOpenAI([{ role: 'user', content: semanticPrompt }], 'gpt-4o', true);
             
             // Step 2: Validate and enhance results with linguistic patterns
@@ -233,6 +272,12 @@ Your task:
 Return the same JSON structure with improved questions.`;
 
         try {
+            // Validate prompt before sending
+            if (typeof enhancementPrompt !== 'string') {
+                console.error('Enhancement prompt is not a string:', typeof enhancementPrompt, enhancementPrompt);
+                throw new Error(`Enhancement prompt must be a string, got ${typeof enhancementPrompt}`);
+            }
+            
             const enhanced = await this.callOpenAI([{ role: 'user', content: enhancementPrompt }], 'gpt-4o-mini', true);
             return enhanced.potential_questions || questions;
         } catch (error) {
@@ -396,6 +441,12 @@ CONTEXT: """${context}"""
 QUESTION: "${question}"`;
         
         try {
+            // Validate prompt before sending
+            if (typeof prompt !== 'string') {
+                console.error('Categorization prompt is not a string:', typeof prompt, prompt);
+                throw new Error(`Categorization prompt must be a string, got ${typeof prompt}`);
+            }
+            
             const result = await this.callOpenAI([{ role: 'user', content: prompt }], 'gpt-4o-mini', true);
             return categories.includes(result.category) ? result.category : 'General';
         } catch (error) {
@@ -429,6 +480,12 @@ CONTEXT: """${context}"""
 QUESTIONS: ${JSON.stringify(questions)}`;
 
         try {
+            // Validate prompt before sending
+            if (typeof prompt !== 'string') {
+                console.error('Prioritization prompt is not a string:', typeof prompt, prompt);
+                throw new Error(`Prioritization prompt must be a string, got ${typeof prompt}`);
+            }
+            
             const result = await this.callOpenAI([{ role: 'user', content: prompt }], 'gpt-4o-mini', true);
             return {
                 main_question: result.main_question || null,
@@ -441,6 +498,17 @@ QUESTIONS: ${JSON.stringify(questions)}`;
     }
 
     async generateResponse(question, context, topic = '') {
+        // Validate inputs to prevent type errors
+        if (typeof question !== 'string') {
+            console.error('Question is not a string:', typeof question, question);
+            throw new Error(`Question must be a string, got ${typeof question}`);
+        }
+        
+        if (typeof context !== 'string') {
+            console.error('Context is not a string:', typeof context, context);
+            throw new Error(`Context must be a string, got ${typeof context}`);
+        }
+
         const contextualPrompt = topic ? 
             `You are an expert in ${topic}. ` : 
             'You are a knowledgeable assistant. ';
@@ -460,6 +528,14 @@ QUESTIONS: ${JSON.stringify(questions)}`;
 
         messages.push({ role: 'user', content: question });
 
+        // Additional validation for messages before sending
+        messages.forEach((msg, index) => {
+            if (typeof msg.content !== 'string') {
+                console.error(`Message[${index}].content is not a string:`, typeof msg.content, msg.content);
+                throw new Error(`Message[${index}].content must be a string, got ${typeof msg.content}`);
+            }
+        });
+
         try {
             return await this.callOpenAI(messages);
         } catch (error) {
@@ -469,6 +545,17 @@ QUESTIONS: ${JSON.stringify(questions)}`;
     }
 
     async processTextAnalysis(textBlock, conversationContext = '') {
+        // Validate inputs before processing
+        if (typeof textBlock !== 'string') {
+            console.error('ProcessTextAnalysis: textBlock is not a string:', typeof textBlock, textBlock);
+            throw new Error(`TextBlock must be a string, got ${typeof textBlock}`);
+        }
+        
+        if (typeof conversationContext !== 'string') {
+            console.error('ProcessTextAnalysis: conversationContext is not a string:', typeof conversationContext, conversationContext);
+            throw new Error(`ConversationContext must be a string, got ${typeof conversationContext}`);
+        }
+
         if (this.isProcessing) {
             this.requestQueue.push({ textBlock, conversationContext });
             return;
@@ -507,6 +594,17 @@ QUESTIONS: ${JSON.stringify(questions)}`;
             );
 
             const prioritized = await this.prioritizeQuestions(conversationContext, categorizedQuestions);
+
+            // Validate prioritized results
+            if (prioritized.main_question && typeof prioritized.main_question !== 'string') {
+                console.error('Main question is not a string:', typeof prioritized.main_question, prioritized.main_question);
+                prioritized.main_question = null;
+            }
+            
+            if (prioritized.secondary_question && typeof prioritized.secondary_question !== 'string') {
+                console.error('Secondary question is not a string:', typeof prioritized.secondary_question, prioritized.secondary_question);
+                prioritized.secondary_question = null;
+            }
 
             return {
                 questions: categorizedQuestions,
