@@ -104,35 +104,176 @@ class AudioCapture {
 
     async startVBCableCapture() {
         try {
+            console.log('Начинаю поиск VB Cable устройства...');
+            
             // Try to get VB Cable device
             const devices = await navigator.mediaDevices.enumerateDevices();
+            console.log('Найдено аудио устройств:', devices.length);
+            
+            // Log all audio input devices for debugging
+            const audioInputs = devices.filter(device => device.kind === 'audioinput');
+            console.log('Аудио входные устройства:');
+            audioInputs.forEach((device, index) => {
+                console.log(`${index + 1}. ${device.label} (ID: ${device.deviceId.substring(0, 20)}...)`);
+            });
+            
+            // Enhanced VB Cable detection
             const vbCableDevice = devices.find(device => 
                 device.kind === 'audioinput' && 
                 (device.label.toLowerCase().includes('cable') || 
-                 device.label.toLowerCase().includes('vb-audio'))
+                 device.label.toLowerCase().includes('vb-audio') ||
+                 device.label.toLowerCase().includes('vb cable') ||
+                 device.label.toLowerCase().includes('vbcable') ||
+                 device.label.toLowerCase().includes('virtual audio cable'))
             );
 
             if (vbCableDevice) {
-                this.vbCableStream = await navigator.mediaDevices.getUserMedia({
+                console.log(`Найдено VB Cable устройство: ${vbCableDevice.label}`);
+                
+                const constraints = {
                     audio: {
-                        deviceId: vbCableDevice.deviceId,
+                        deviceId: { exact: vbCableDevice.deviceId },
                         echoCancellation: false,
                         noiseSuppression: false,
                         autoGainControl: false,
                         sampleRate: this.sampleRate,
                         channelCount: 1
                     }
-                });
+                };
+                
+                console.log('Попытка получить доступ к VB Cable с настройками:', constraints);
+                
+                this.vbCableStream = await navigator.mediaDevices.getUserMedia(constraints);
+
+                // Test the stream
+                const tracks = this.vbCableStream.getAudioTracks();
+                if (tracks.length > 0) {
+                    const track = tracks[0];
+                    console.log('VB Cable трек получен:');
+                    console.log('- Label:', track.label);
+                    console.log('- Enabled:', track.enabled);
+                    console.log('- Ready State:', track.readyState);
+                    console.log('- Settings:', track.getSettings());
+                    
+                    // Check if track is actually receiving audio
+                    const trackSettings = track.getSettings();
+                    if (trackSettings.sampleRate) {
+                        console.log(`VB Cable сконфигурирован: ${trackSettings.sampleRate}Hz, ${trackSettings.channelCount} каналов`);
+                    }
+                }
 
                 this.setupAudioRecording(this.vbCableStream, 'P1');
                 console.log('VB Cable capture started (P1)');
+                
+                // Add a test to see if we're actually getting audio data
+                setTimeout(() => this.testVBCableAudio(), 2000);
+                
             } else {
-                console.warn('VB Cable device not found');
+                console.warn('VB Cable устройство не найдено');
+                console.warn('Доступные аудио устройства:');
+                audioInputs.forEach(device => {
+                    console.warn(`- ${device.label}`);
+                });
+                
+                // Try alternative approach - look for any device that might be VB Cable
+                const possibleVBDevices = audioInputs.filter(device => 
+                    device.label.toLowerCase().includes('line') ||
+                    device.label.toLowerCase().includes('stereo') ||
+                    device.deviceId !== 'default'
+                );
+                
+                if (possibleVBDevices.length > 0) {
+                    console.warn('Возможные VB Cable кандидаты:');
+                    possibleVBDevices.forEach(device => {
+                        console.warn(`- ${device.label} (ID: ${device.deviceId.substring(0, 20)}...)`);
+                    });
+                }
             }
         } catch (error) {
-            console.error('Error accessing VB Cable:', error);
+            console.error('Ошибка доступа к VB Cable:', error);
+            console.error('Детали ошибки:', {
+                name: error.name,
+                message: error.message,
+                stack: error.stack
+            });
+            
             // Don't throw - continue with just microphone
+            this.showVBCableError(error);
         }
+    }
+
+    testVBCableAudio() {
+        if (!this.vbCableStream || !this.p1Analyser) {
+            console.warn('VB Cable поток или анализатор недоступен для тестирования');
+            return;
+        }
+        
+        console.log('Тестирование аудио потока VB Cable...');
+        
+        let testDuration = 5000; // 5 seconds
+        let sampleCount = 0;
+        let totalLevel = 0;
+        let maxLevel = 0;
+        
+        const testInterval = setInterval(() => {
+            if (this.p1Analyser && this.p1DataArray) {
+                this.p1Analyser.getByteTimeDomainData(this.p1DataArray);
+                let sum = 0;
+                for (let i = 0; i < this.p1DataArray.length; i++) {
+                    const sample = (this.p1DataArray[i] - 128) / 128;
+                    sum += sample * sample;
+                }
+                const rms = Math.sqrt(sum / this.p1DataArray.length);
+                const level = rms * 100;
+                
+                totalLevel += level;
+                sampleCount++;
+                maxLevel = Math.max(maxLevel, level);
+            }
+        }, 100);
+        
+        setTimeout(() => {
+            clearInterval(testInterval);
+            const avgLevel = sampleCount > 0 ? totalLevel / sampleCount : 0;
+            
+            console.log('Результаты теста VB Cable:');
+            console.log(`- Средний уровень: ${avgLevel.toFixed(2)}%`);
+            console.log(`- Максимальный уровень: ${maxLevel.toFixed(2)}%`);
+            console.log(`- Количество образцов: ${sampleCount}`);
+            
+            if (maxLevel < 1) {
+                console.warn('⚠️ VB Cable может не получать аудио сигнал');
+                console.warn('Проверьте:');
+                console.warn('1. VB Cable настроен как устройство воспроизведения в приложении');
+                console.warn('2. VB Cable установлен и работает');
+                console.warn('3. Аудио играет в источнике (Zoom/Google Meet)');
+            } else if (maxLevel > 1) {
+                console.log('✅ VB Cable получает аудио сигнал');
+            }
+        }, testDuration);
+    }
+
+    showVBCableError(error) {
+        // Create error notification in UI if possible
+        if (typeof window !== 'undefined' && window.showNotification) {
+            window.showNotification('Ошибка VB Cable: ' + error.message, 'error');
+        }
+        
+        // Log detailed troubleshooting info
+        console.group('🔧 Диагностика VB Cable');
+        console.error('Ошибка:', error.message);
+        console.log('Возможные причины:');
+        console.log('1. VB Cable не установлен');
+        console.log('2. VB Cable не настроен как устройство ввода');
+        console.log('3. Нет разрешения на доступ к микрофону');
+        console.log('4. VB Cable не выбран в настройках системы');
+        console.log('');
+        console.log('Решения:');
+        console.log('1. Установите VB Cable с официального сайта');
+        console.log('2. Настройте VB Cable как устройство воспроизведения в источнике аудио');
+        console.log('3. Дайте разрешение на доступ к микрофону в браузере');
+        console.log('4. Проверьте настройки звука в системе');
+        console.groupEnd();
     }
 
     setupAudioRecording(stream, personType) {
