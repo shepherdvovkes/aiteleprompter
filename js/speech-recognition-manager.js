@@ -15,6 +15,7 @@ class SpeechRecognitionManager {
         this.CHUNK_DURATION = 30000;
         this.SENTENCE_PAUSE_THRESHOLD = 2000;
         this.PERIODIC_THRESHOLD = 20000;
+        this.RECONNECT_DELAY = 1000; // Delay before automatic reconnection
         
         // Timers
         this.silenceTimer = null;
@@ -27,6 +28,9 @@ class SpeechRecognitionManager {
         this.lockedInterim = '';
         this.interimText = '';
         this.lastLoggedSentence = '';
+        this.continuousMode = false; // Flag for continuous listening
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 5;
         
         // Callbacks
         this.onTranscriptUpdate = null;
@@ -76,11 +80,14 @@ class SpeechRecognitionManager {
             
             if (this.shouldRestart && this.isListening) {
                 this.shouldRestart = false;
-                this.recognition.start();
-                this.chunkTimer = setInterval(() => {
-                    this.shouldRestart = true;
-                    this.recognition.stop();
-                }, this.CHUNK_DURATION);
+                this.attemptRestart();
+                return;
+            }
+            
+            // If in continuous mode and still listening, attempt to restart
+            if (this.continuousMode && this.isListening) {
+                console.log('Continuous mode: attempting automatic restart');
+                this.attemptRestart();
                 return;
             }
             
@@ -89,7 +96,25 @@ class SpeechRecognitionManager {
 
         this.recognition.onerror = (event) => {
             console.error('Speech recognition error:', event.error);
-            this.onStatusChange?.('error', `Error: ${event.error}`);
+            
+            // Handle different types of errors
+            if (event.error === 'network') {
+                this.onStatusChange?.('error', 'Network error - will retry');
+                if (this.continuousMode && this.reconnectAttempts < this.maxReconnectAttempts) {
+                    setTimeout(() => this.attemptRestart(), this.RECONNECT_DELAY * (this.reconnectAttempts + 1));
+                }
+            } else if (event.error === 'not-allowed') {
+                this.onStatusChange?.('error', 'Microphone access denied');
+                this.continuousMode = false;
+            } else if (event.error === 'aborted') {
+                // This is normal during restart, don't show as error
+                console.log('Recognition aborted (normal during restart)');
+            } else {
+                this.onStatusChange?.('error', `Error: ${event.error}`);
+                if (this.continuousMode && this.reconnectAttempts < this.maxReconnectAttempts) {
+                    setTimeout(() => this.attemptRestart(), this.RECONNECT_DELAY);
+                }
+            }
         };
 
         this.recognition.onresult = (event) => {
@@ -136,10 +161,12 @@ class SpeechRecognitionManager {
         this.updateInterimDisplay();
     }
 
-    async startListening(language = 'ru-RU') {
+    async startListening(language = 'ru-RU', continuous = true) {
         if (this.isListening || !this.recognition) return false;
 
         this.recognition.lang = language;
+        this.continuousMode = continuous;
+        this.reconnectAttempts = 0;
         
         try {
             // Initialize audio manager without requesting microphone
@@ -149,12 +176,43 @@ class SpeechRecognitionManager {
             this.hasStartedBefore = false;
             this.recognition.start();
             
-            console.log('Started listening with language:', language);
+            console.log('Started listening with language:', language, 'continuous:', continuous);
             return true;
         } catch (error) {
             console.error('Failed to start listening:', error);
             this.onStatusChange?.('error', 'Failed to start listening');
             return false;
+        }
+    }
+
+    attemptRestart() {
+        if (!this.isListening || !this.recognition) return;
+        
+        this.reconnectAttempts++;
+        console.log(`Attempting restart ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
+        
+        try {
+            this.recognition.start();
+            this.chunkTimer = setInterval(() => {
+                this.shouldRestart = true;
+                this.recognition.stop();
+            }, this.CHUNK_DURATION);
+            
+            // Reset reconnect attempts on successful restart
+            this.reconnectAttempts = 0;
+        } catch (error) {
+            console.error('Restart attempt failed:', error);
+            
+            if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                setTimeout(() => {
+                    this.attemptRestart();
+                }, this.RECONNECT_DELAY * this.reconnectAttempts);
+            } else {
+                console.error('Max reconnect attempts reached');
+                this.onStatusChange?.('error', 'Unable to maintain connection');
+                this.continuousMode = false;
+                this.stopListening();
+            }
         }
     }
 

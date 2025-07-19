@@ -497,7 +497,68 @@ QUESTIONS: ${JSON.stringify(questions)}`;
         }
     }
 
+    async detectFollowUpQuestions(newText, recentContext, previousQuestions = []) {
+        const prompt = `You are analyzing a conversation to detect follow-up and clarifying questions. Your task is to identify when new text contains questions that are directly related to or clarify previously asked questions.
+
+ANALYSIS CRITERIA:
+1. DIRECT FOLLOW-UPS: Questions that explicitly reference previous questions ("Can you explain that better?", "What did you mean by X?")
+2. CLARIFYING QUESTIONS: Short questions that need context from previous questions ("Why?", "How so?", "Really?", "What about X?")
+3. ELABORATION REQUESTS: Requests for more detail on previous topics ("Tell me more about...", "Can you give an example?")
+4. ALTERNATIVE APPROACHES: Questions asking about different ways to solve previously discussed problems
+5. CONTEXTUAL CONNECTIONS: Questions that make sense only in the context of previous questions
+
+PREVIOUS QUESTIONS CONTEXT:
+${previousQuestions.map(q => `- ${q.text} (${q.category || 'Unknown'})`).join('\n')}
+
+RECENT CONVERSATION:
+"""${recentContext}"""
+
+NEW TEXT TO ANALYZE:
+"""${newText}"""
+
+Return JSON with:
+{
+  "has_follow_up": boolean,
+  "follow_up_questions": [
+    {
+      "text": "complete question with context",
+      "original_text": "raw text from input",
+      "relates_to": "text of the previous question it relates to",
+      "relationship_type": "clarification|elaboration|alternative|direct_follow_up",
+      "priority": "high|medium|low"
+    }
+  ],
+  "standalone_questions": [
+    {
+      "text": "questions that are independent",
+      "type": "technical|general|personal"
+    }
+  ]
+}`;
+
+        try {
+            const result = await this.callOpenAI([{ role: 'user', content: prompt }], 'gpt-4o', true);
+            return {
+                has_follow_up: result.has_follow_up || false,
+                follow_up_questions: result.follow_up_questions || [],
+                standalone_questions: result.standalone_questions || []
+            };
+        } catch (error) {
+            console.error('Follow-up question detection failed:', error);
+            return {
+                has_follow_up: false,
+                follow_up_questions: [],
+                standalone_questions: []
+            };
+        }
+    }
+
     async generateResponse(question, context, topic = '') {
+        // Check for demo mode first
+        if (window.demoMode && window.demoMode.isEnabled()) {
+            return await window.demoMode.generateDemoResponse(question, context);
+        }
+        
         // Validate inputs to prevent type errors
         if (typeof question !== 'string') {
             console.error('Question is not a string:', typeof question, question);

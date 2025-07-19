@@ -197,15 +197,24 @@ class UIManager {
     }
 
     // Create response container with regenerate functionality
-    createResponseContainer(question, response, responseId) {
+    createResponseContainer(question, response, responseId, questionType = 'regular') {
         const container = document.createElement('div');
         container.className = 'response-container bg-gray-800/70 rounded-lg p-4 border border-gray-600 relative';
         container.dataset.responseId = responseId;
 
-        // Question header
+        // Question header with type indicator
         const questionEl = document.createElement('div');
-        questionEl.className = 'text-blue-400 font-semibold mb-3 text-sm';
-        questionEl.textContent = `Q: ${question}`;
+        questionEl.className = 'text-blue-400 font-semibold mb-3 text-sm flex items-center';
+        
+        // Add type badge
+        let typeBadge = '';
+        if (questionType === 'follow-up') {
+            typeBadge = '<span class="bg-yellow-600 text-yellow-100 px-2 py-1 rounded-full text-xs mr-2">Follow-up</span>';
+        } else if (questionType === 'immediate') {
+            typeBadge = '<span class="bg-green-600 text-green-100 px-2 py-1 rounded-full text-xs mr-2">Immediate</span>';
+        }
+        
+        questionEl.innerHTML = `${typeBadge}Q: ${question}`;
 
         // Response content
         const responseEl = document.createElement('div');

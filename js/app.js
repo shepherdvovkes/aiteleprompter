@@ -18,6 +18,7 @@ class App {
         this.rawConversationBuffer = [];
         this.analysisQueue = [];
         this.lastProcessedQuestions = [];
+        this.recentQuestions = []; // Store recent questions for follow-up detection
         this.questionContext = '';
         this.aiResponses = [];
         this.sessionStartTime = null;
@@ -67,6 +68,7 @@ class App {
         this.modalApiKeyInput = document.getElementById('modal-apiKey-input');
         this.modalTopicInput = document.getElementById('modal-topic-input');
         this.modalDelayInput = document.getElementById('modal-delay-input');
+        this.demoModeCheckbox = document.getElementById('demo-mode-checkbox');
         this.modalSaveButton = document.getElementById('modal-save-button');
         this.modalCancelButton = document.getElementById('modal-cancel-button');
     }
@@ -134,14 +136,21 @@ class App {
         const apiKey = localStorage.getItem('openai_api_key') || '';
         const topic = localStorage.getItem('conversation_topic') || '';
         const delay = localStorage.getItem('question_processing_delay') || '3';
+        const demoMode = localStorage.getItem('demo_mode') === 'true';
         
         this.modalApiKeyInput.value = apiKey;
         this.modalTopicInput.value = topic;
         this.modalDelayInput.value = delay;
+        this.demoModeCheckbox.checked = demoMode;
         
         this.aiService.setApiKey(apiKey);
         this.aiService.setConversationTopic(topic);
         this.questionProcessingDelay = parseFloat(delay) * 1000; // Convert to milliseconds
+        
+        // Set demo mode
+        if (demoMode) {
+            window.demoMode.enable();
+        }
         
         // Check for session backup
         this.checkSessionBackup();
@@ -205,12 +214,15 @@ class App {
             const selectedLang = this.languageSelect.value;
             const language = selectedLang === 'auto' ? 'ru-RU' : selectedLang;
             
-            // Start speech recognition
-            const success = await this.speechManager.startListening(language);
+            // Start speech recognition in continuous mode
+            const success = await this.speechManager.startListening(language, true);
             
             if (success) {
                 this.updateButtonStates(true);
                 this.clearDisplays();
+                
+                // Show continuous mode indicator
+                this.showContinuousModeIndicator();
             } else {
                 this.updateStatus('error', 'Failed to start listening');
             }
@@ -226,6 +238,10 @@ class App {
         
         this.speechManager.stopListening();
         this.updateButtonStates(false);
+        
+        // Hide continuous mode indicator
+        this.hideContinuousModeIndicator();
+        this.hidePendingQuestionsIndicator();
         
         // Process any remaining pending questions before stopping
         if (this.pendingSentences.length > 0) {
@@ -375,7 +391,10 @@ class App {
                 if (analysis && analysis.questions.length > 0) {
                     // Remove this sentence from pending buffer since we're processing it now
                     this.pendingSentences = this.pendingSentences.filter(s => s.text !== sentence);
-                    await this.handleQuestionsDetected(analysis, context);
+                    
+                    // Mark questions as immediate and handle them
+                    analysis.questions.forEach(q => q.questionType = 'immediate');
+                    await this.handleQuestionsDetected(analysis, context, 'immediate');
                     return true; // Indicate that we processed this immediately
                 }
             } else if (isContinuationIndicator && this.pendingSentences.length > 0) {
@@ -414,10 +433,49 @@ class App {
             const contextSentences = this.rawConversationBuffer.slice(-8);
             const context = contextSentences.join(' ');
             
-            // Analyze the combined text block for questions
+            // First, check for follow-up questions related to recent questions
+            const followUpAnalysis = await this.aiService.detectFollowUpQuestions(
+                textBlock, 
+                context, 
+                this.recentQuestions.slice(-5) // Last 5 questions for context
+            );
+            
+            // Process follow-up questions with high priority
+            if (followUpAnalysis.has_follow_up && followUpAnalysis.follow_up_questions.length > 0) {
+                console.log('Found follow-up questions:', followUpAnalysis.follow_up_questions);
+                
+                for (const followUpQ of followUpAnalysis.follow_up_questions) {
+                    if (followUpQ.priority === 'high') {
+                        // Generate response immediately for high-priority follow-ups
+                        await this.generateAndDisplayResponse(
+                            `${followUpQ.text} (Follow-up to: "${followUpQ.relates_to}")`, 
+                            context, 
+                            false, 
+                            null, 
+                            'follow-up'
+                        );
+                    }
+                }
+            }
+            
+            // Then analyze for regular questions
             const analysis = await this.aiService.performSemanticAnalysis(textBlock, context);
             
             if (analysis && analysis.questions && analysis.questions.length > 0) {
+                // Store questions for future follow-up detection
+                analysis.questions.forEach(q => {
+                    this.recentQuestions.push({
+                        text: q.text,
+                        category: q.category || 'Unknown',
+                        timestamp: Date.now()
+                    });
+                });
+                
+                // Keep only recent questions (last 10)
+                if (this.recentQuestions.length > 10) {
+                    this.recentQuestions = this.recentQuestions.slice(-10);
+                }
+                
                 // Use enhanced question prioritization for delayed processing
                 const priority = await this.aiService.prioritizeQuestions(context, analysis.questions);
                 
@@ -484,6 +542,36 @@ class App {
         }
     }
 
+    showContinuousModeIndicator() {
+        const indicator = document.createElement('div');
+        indicator.id = 'continuous-mode-indicator';
+        indicator.className = 'bg-green-900/30 border border-green-600 rounded-lg p-3 mb-4 text-green-200';
+        indicator.innerHTML = `
+            <div class="flex items-center">
+                <svg class="animate-pulse h-4 w-4 mr-2 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.293l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z" clip-rule="evenodd"/>
+                </svg>
+                <span>Continuous listening mode active - No questions will be missed!</span>
+            </div>
+        `;
+        
+        this.aiResponseArea.insertBefore(indicator, this.aiResponseArea.firstChild);
+        
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+            if (indicator && indicator.parentNode) {
+                indicator.remove();
+            }
+        }, 5000);
+    }
+
+    hideContinuousModeIndicator() {
+        const indicator = document.getElementById('continuous-mode-indicator');
+        if (indicator) {
+            indicator.remove();
+        }
+    }
+
     startCountdownTimer(extendedDelay = null) {
         if (this.countdownInterval) {
             clearInterval(this.countdownInterval);
@@ -512,18 +600,18 @@ class App {
         }, 100); // Update every 100ms for smooth countdown
     }
 
-    async handleQuestionsDetected(analysis, context) {
+    async handleQuestionsDetected(analysis, context, questionType = 'regular') {
         const { questions, priority } = analysis;
         
         if (priority.main_question) {
-            await this.generateAndDisplayResponse(priority.main_question, context);
+            await this.generateAndDisplayResponse(priority.main_question, context, false, null, questionType);
         }
         
         // Display all detected questions for reference
         this.displayDetectedQuestions(questions);
     }
 
-    async generateAndDisplayResponse(question, context, isRegeneration = false, existingResponseId = null) {
+    async generateAndDisplayResponse(question, context, isRegeneration = false, existingResponseId = null, questionType = 'regular') {
         try {
             this.showProgress(true);
             
@@ -541,7 +629,7 @@ class App {
             if (isRegeneration && existingResponseId) {
                 this.updateExistingResponse(existingResponseId, question, response);
             } else {
-                this.displayAIResponse(question, response);
+                this.displayAIResponse(question, response, questionType);
             }
             
         } catch (error) {
@@ -577,7 +665,7 @@ class App {
         this.aiResponseArea.scrollTop = this.aiResponseArea.scrollHeight;
     }
 
-    displayAIResponse(question, response) {
+    displayAIResponse(question, response, questionType = 'regular') {
         // Hide placeholder if visible
         if (this.aiPlaceholder && this.aiPlaceholder.parentNode) {
             this.aiPlaceholder.remove();
@@ -590,7 +678,8 @@ class App {
         const { container, regenerateBtn, responseEl } = this.uiManager.createResponseContainer(
             question, 
             this.formatResponse(response), 
-            responseId
+            responseId,
+            questionType
         );
         
         // Store response data
@@ -752,6 +841,7 @@ class App {
         const apiKey = this.modalApiKeyInput.value.trim();
         const topic = this.modalTopicInput.value.trim();
         const delay = this.modalDelayInput.value.trim();
+        const demoMode = this.demoModeCheckbox.checked;
         
         // Validate delay value
         const delayFloat = parseFloat(delay);
@@ -766,9 +856,17 @@ class App {
         
         // Save to localStorage
         localStorage.setItem('question_processing_delay', delay);
+        localStorage.setItem('demo_mode', demoMode.toString());
+        
+        // Update demo mode
+        if (demoMode) {
+            window.demoMode.enable();
+        } else {
+            window.demoMode.disable();
+        }
         
         this.hideSettings();
-        console.log('Settings saved, delay set to:', delayFloat, 'seconds');
+        console.log('Settings saved, delay set to:', delayFloat, 'seconds', 'demo mode:', demoMode);
     }
 
     handleVisibilityChange() {

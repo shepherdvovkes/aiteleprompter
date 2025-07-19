@@ -95,6 +95,14 @@
                 <p class="text-xs text-gray-500 mt-2">Time to wait after last sentence before processing questions (1-10 seconds).</p>
             </div>
 
+            <div class="border-t border-gray-600 pt-4">
+                <label class="flex items-center space-x-2">
+                    <input type="checkbox" id="demo-mode-checkbox" class="rounded border-gray-600 bg-gray-900 text-blue-600 focus:ring-blue-500">
+                    <span class="text-sm text-gray-300">Demo Mode (работает без API ключа)</span>
+                </label>
+                <p class="text-xs text-gray-500 mt-1">Включите для тестирования системы с предустановленными ответами</p>
+            </div>
+
             <div class="flex justify-end space-x-4">
                 <button id="modal-cancel-button" class="px-4 py-2 rounded-md text-gray-300 hover:bg-gray-700 transition-colors">Cancel</button>
                 <button id="modal-save-button" class="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors">Save</button>
@@ -103,6 +111,7 @@
     </div>
 
 <!-- Load JavaScript modules -->
+<script src="js/demo-mode.js"></script>
 <script src="js/audio-manager.js"></script>
 <script src="js/speech-recognition-manager.js"></script>
 <script src="js/ai-service.js"></script>
