@@ -148,7 +148,7 @@
                 
                 switch(msg.type) {
                     case 'start':
-                        teleprompterText.innerHTML = '';
+                        teleprompterText.textContent = '';
                         textContainer.scrollTop = 0;
                         currentScrollPosition = 0;
                         targetScrollPosition = 0;
@@ -158,9 +158,9 @@
                         console.log('Teleprompter started');
                         break;
                     case 'token':
-                        // Use innerHTML for better Safari compatibility
-                        const currentContent = teleprompterText.innerHTML;
-                        teleprompterText.innerHTML = currentContent + escapeHtml(msg.data);
+                        // Use safer text node appending
+                        const textNode = document.createTextNode(msg.data);
+                        teleprompterText.appendChild(textNode);
                         
                         // Trigger smooth scroll to show new content if scrolling is enabled
                         if (isScrolling && !manualScrolling) {
