@@ -337,7 +337,7 @@ app.post('/api/audio/upload/p2', upload.single('audio'), (req, res) => {
 app.get('/api/audio/config', (req, res) => {
   res.json({
     person1: {
-      name: 'P1 (Interviewer)',
+      name: 'P1 (Interviewer)', 
       source: 'VB Cable',
       description: 'Audio from Zoom/Google Meet via VB Cable',
       badge: 'P1'
@@ -349,6 +349,11 @@ app.get('/api/audio/config', (req, res) => {
       badge: 'P2'
     }
   });
+});
+
+// Default route redirects to main interface
+app.get('/', (req, res) => {
+  res.redirect('/main.html');
 });
 
 // Only start the server if this file is run directly (not required by tests)

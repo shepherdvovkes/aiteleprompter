@@ -4,6 +4,7 @@
  */
 class App {
     constructor() {
+        this.channelManager = new ChannelManager();
         this.audioManager = new AudioManager();
         this.speechManager = new SpeechRecognitionManager(this.audioManager);
         this.aiService = new AIService();
@@ -63,6 +64,12 @@ class App {
         this.aiPlaceholder = document.getElementById('ai-placeholder');
         this.progressBar = document.getElementById('progress-bar');
         
+        // Statistics counters
+        this.p1SentencesCount = document.getElementById('p1-sentences-count');
+        this.p2SentencesCount = document.getElementById('p2-sentences-count');
+        this.questionsCount = document.getElementById('questions-count');
+        this.responsesCount = document.getElementById('responses-count');
+        
         // Settings modal
         this.settingsModal = document.getElementById('settings-modal');
         this.modalApiKeyInput = document.getElementById('modal-apiKey-input');
@@ -83,6 +90,39 @@ class App {
         this.uiManager.showBrowserCompatibilityWarning();
         
         console.log('Application initialized successfully');
+        
+        // Auto-start listening after initialization
+        this.autoStartListening();
+    }
+
+    async autoStartListening() {
+        // Wait a bit for UI to settle
+        setTimeout(async () => {
+            try {
+                console.log('Auto-starting listening with default behavior');
+                
+                // Check if API key is configured
+                if (!this.aiService.apiKey) {
+                    console.log('No API key configured, showing settings');
+                    this.showSettings();
+                    return;
+                }
+                
+                // Auto-start listening
+                await this.handleStart();
+                
+                // Show info about default behavior
+                this.uiManager.showToast(
+                    'Приложение запущено! Слушает P1 (VB Cable) для вопросов и P2 (микрофон) для ответов.', 
+                    'info', 
+                    5000
+                );
+                
+            } catch (error) {
+                console.error('Auto-start failed:', error);
+                this.uiManager.showToast('Не удалось автоматически запустить прослушивание', 'error', 3000);
+            }
+        }, 1000);
     }
 
     setupEventHandlers() {
@@ -114,6 +154,9 @@ class App {
         
         // Handle page visibility changes
         window.addEventListener('visibilitychange', () => this.handleVisibilityChange());
+        
+        // Listen for channel changes
+        window.addEventListener('channelChanged', (event) => this.handleChannelChange(event));
     }
 
     setupSpeechCallbacks() {
@@ -282,53 +325,96 @@ class App {
     }
 
     async handleSentenceFinalized(sentence) {
+        // Tag sentence with current channel information
+        const taggedSentence = this.channelManager.tagSentenceWithChannel(sentence);
+        
         // Add to conversation buffer
-        this.rawConversationBuffer.push(sentence);
+        this.rawConversationBuffer.push(taggedSentence);
         
-        // Update display
-        this.addToTranscriptDisplay(sentence);
+        // Update display with channel information
+        this.addToTranscriptDisplay(taggedSentence);
         
-        // Update speaker status
-        this.currentSpeakerDiv.textContent = 'Recording...';
+        // Update speaker status with channel info
+        const channelInfo = this.channelManager.getChannelInfo();
+        this.currentSpeakerDiv.textContent = `${channelInfo.badge} - ${channelInfo.description}`;
         
-        // Add to pending sentences buffer
-        this.pendingSentences.push({
-            text: sentence,
-            timestamp: Date.now()
-        });
-        
-        // Keep buffer size manageable
-        if (this.pendingSentences.length > this.maxSentenceBuffer) {
-            this.pendingSentences.shift();
+        // Only process questions from VB Cable (P1) channel
+        if (taggedSentence.shouldDetectQuestions) {
+            console.log(`Processing sentence from ${taggedSentence.channel} (VB Cable): ${sentence}`);
+            
+            // Add to pending sentences buffer for question detection
+            this.pendingSentences.push(taggedSentence);
+            
+            // Keep buffer size manageable
+            if (this.pendingSentences.length > this.maxSentenceBuffer) {
+                this.pendingSentences.shift();
+            }
+            
+            this.lastSentenceTime = Date.now();
+            
+            // Clear existing timer and set new one for delayed processing
+            if (this.questionProcessingTimer) {
+                clearTimeout(this.questionProcessingTimer);
+            }
+            
+            this.questionProcessingTimer = setTimeout(() => {
+                this.processDelayedQuestions();
+            }, this.questionProcessingDelay);
+            
+            // Start countdown timer for the indicator
+            this.startCountdownTimer();
+            
+            // Also do immediate check for urgent/complete questions
+            const processedImmediately = await this.checkForImmediateQuestions(sentence);
+            
+            // Show pending indicator if we have buffered sentences waiting for processing
+            if (this.pendingSentences.length > 0 && !processedImmediately) {
+                this.showPendingQuestionsIndicator();
+            }
+        } else {
+            console.log(`Ignoring sentence from ${taggedSentence.channel} (not VB Cable): ${sentence}`);
+            // Just display but don't process for questions
         }
         
-        this.lastSentenceTime = Date.now();
-        
-        // Clear existing timer and set new one for delayed processing
-        if (this.questionProcessingTimer) {
-            clearTimeout(this.questionProcessingTimer);
-        }
-        
-        this.questionProcessingTimer = setTimeout(() => {
-            this.processDelayedQuestions();
-        }, this.questionProcessingDelay);
-        
-        // Start countdown timer for the indicator
-        this.startCountdownTimer();
-        
-        // Also do immediate check for urgent/complete questions
-        const processedImmediately = await this.checkForImmediateQuestions(sentence);
-        
-        // Show pending indicator if we have buffered sentences waiting for processing
-        if (this.pendingSentences.length > 0 && !processedImmediately) {
-            this.showPendingQuestionsIndicator();
-        }
+        // Update statistics
+        this.updateStatistics();
     }
 
-    addToTranscriptDisplay(sentence) {
+    addToTranscriptDisplay(sentenceData) {
         const sentenceDiv = document.createElement('div');
-        sentenceDiv.className = 'p-2 border-l-4 border-blue-500 bg-gray-800/50 rounded-r';
-        sentenceDiv.textContent = sentence;
+        
+        // Handle both old string format and new tagged format
+        const isTagged = typeof sentenceData === 'object' && sentenceData.channel;
+        const text = isTagged ? sentenceData.text : sentenceData;
+        const channel = isTagged ? sentenceData.channel : 'P1'; // Default to P1
+        const channelInfo = isTagged ? sentenceData.channelInfo : this.channelManager.getChannelInfo('P1');
+        
+        // Style based on channel
+        const borderColor = channel === 'P1' ? 'border-red-500' : 'border-green-500';
+        const bgColor = channel === 'P1' ? 'bg-red-900/20' : 'bg-green-900/20';
+        
+        sentenceDiv.className = `transcript-entry p-3 border-l-4 ${borderColor} ${bgColor} rounded-r mb-2`;
+        
+        // Create content with channel badge
+        const channelBadge = document.createElement('span');
+        channelBadge.className = `person-badge ${channel === 'P1' ? 'badge-p1' : 'badge-p2'}`;
+        channelBadge.textContent = channelInfo.badge;
+        
+        const textSpan = document.createElement('span');
+        textSpan.textContent = text;
+        
+        sentenceDiv.appendChild(channelBadge);
+        sentenceDiv.appendChild(textSpan);
+        
+        // Add question detection indicator for P1
+        if (channel === 'P1' && isTagged && sentenceData.shouldDetectQuestions) {
+            const questionIcon = document.createElement('span');
+            questionIcon.className = 'ml-2 text-yellow-400';
+            questionIcon.textContent = '❓';
+            questionIcon.title = 'Анализируется на предмет вопросов';
+            sentenceDiv.appendChild(questionIcon);
+        }
+        
         this.finalTranscriptDiv.appendChild(sentenceDiv);
         
         // Add animation
@@ -426,12 +512,16 @@ class App {
         try {
             console.log('Processing delayed questions for', this.pendingSentences.length, 'sentences');
             
-            // Combine all pending sentences into a text block
-            const textBlock = this.pendingSentences.map(s => s.text).join(' ');
+            // Combine all pending sentences into a text block (handle both old and new format)
+            const textBlock = this.pendingSentences.map(s => 
+                typeof s === 'object' && s.text ? s.text : s
+            ).join(' ');
             
-            // Create extended context from recent conversation
+            // Create extended context from recent conversation (handle both old and new format)
             const contextSentences = this.rawConversationBuffer.slice(-8);
-            const context = contextSentences.join(' ');
+            const context = contextSentences.map(s => 
+                typeof s === 'object' && s.text ? s.text : s
+            ).join(' ');
             
             // First, check for follow-up questions related to recent questions
             const followUpAnalysis = await this.aiService.detectFollowUpQuestions(
@@ -876,6 +966,37 @@ class App {
         }
     }
 
+    handleChannelChange(event) {
+        const { channel, channelInfo } = event.detail;
+        console.log(`Active channel changed to: ${channel} (${channelInfo.name})`);
+        
+        // Update UI to show current channel
+        this.currentSpeakerDiv.textContent = `${channelInfo.badge} - ${channelInfo.description}`;
+        
+        // Show notification about question detection behavior
+        if (channelInfo.detectQuestions) {
+            this.uiManager.showToast(`Переключено на ${channelInfo.name} - вопросы будут обнаруживаться`, 'info', 3000);
+        } else {
+            this.uiManager.showToast(`Переключено на ${channelInfo.name} - вопросы не обнаруживаются`, 'warning', 3000);
+        }
+    }
+
+    updateStatistics(channel) {
+        // Count sentences by channel
+        const p1Count = this.rawConversationBuffer.filter(s => 
+            (typeof s === 'object' && s.channel === 'P1') || (typeof s === 'string')
+        ).length;
+        
+        const p2Count = this.rawConversationBuffer.filter(s => 
+            typeof s === 'object' && s.channel === 'P2'
+        ).length;
+        
+        // Update UI counters
+        if (this.p1SentencesCount) this.p1SentencesCount.textContent = p1Count;
+        if (this.p2SentencesCount) this.p2SentencesCount.textContent = p2Count;
+        if (this.responsesCount) this.responsesCount.textContent = this.aiResponses.length;
+    }
+
     saveSessionBackup() {
         if (this.rawConversationBuffer.length === 0 && this.aiResponses.length === 0) {
             return; // Nothing to save
@@ -951,6 +1072,7 @@ class App {
         this.saveSessionBackup();
         this.speechManager.cleanup();
         this.audioManager.cleanup();
+        this.channelManager.cleanup();
         if (this.teleprompterChannel) {
             this.teleprompterChannel.close();
         }

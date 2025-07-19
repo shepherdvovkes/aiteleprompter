@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interview Assistant - Главный интерфейс</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b0764 50%, #581c87 100%);
+            min-height: 100vh;
+        }
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .ai-response {
+            background: linear-gradient(135deg, #059669, #0d9488);
+            border-radius: 12px;
+            margin: 8px 0;
+            padding: 16px;
+            color: white;
+        }
+        .ai-response-content {
+            line-height: 1.6;
+        }
+        .transcript-entry {
+            padding: 8px 12px;
+            margin: 4px 0;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.05);
+        }
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .status-online { background: #10b981; }
+        .status-offline { background: #ef4444; }
+        .person-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 6px;
+            font-size: 10px;
+            font-weight: 600;
+            color: white;
+            margin-right: 6px;
+        }
+        .badge-p1 { background: linear-gradient(135deg, #ff6b6b, #ee5a24); }
+        .badge-p2 { background: linear-gradient(135deg, #4ecdc4, #44bd87); }
+        .continuous-mode-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(16, 185, 129, 0.9);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            z-index: 1000;
+            animation: pulse 2s infinite;
+        }
+        .pending-questions-indicator {
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            background: rgba(249, 115, 22, 0.9);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body class="text-white">
+    <!-- Continuous Mode Indicator (hidden by default) -->
+    <div id="continuous-mode-indicator" class="continuous-mode-indicator" style="display: none;">
+        🎤 Непрерывное прослушивание
+    </div>
+
+    <!-- Pending Questions Indicator (hidden by default) -->
+    <div id="pending-questions-indicator" class="pending-questions-indicator" style="display: none;">
+        ⏳ Обработка вопросов: <span id="countdown-timer">3</span>с
+    </div>
+
+    <div class="container mx-auto px-6 py-4">
+        <!-- Header -->
+        <header class="glass-effect rounded-xl p-4 mb-6">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <div class="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+                        </svg>
+                    </div>
+                    <h1 class="text-xl font-bold">Interview Assistant</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="flex items-center">
+                        <div id="status-light" class="w-3 h-3 rounded-full bg-red-500"></div>
+                        <span id="status-text" class="ml-2 text-sm">Остановлен</span>
+                    </div>
+                    <div class="flex items-center">
+                        <span class="badge-p1 person-badge">P1</span>
+                        <span class="text-xs">VB Cable</span>
+                    </div>
+                    <div class="flex items-center">
+                        <span class="badge-p2 person-badge">P2</span>
+                        <span class="text-xs">Микрофон</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Controls -->
+        <div class="glass-effect rounded-xl p-6 mb-6">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-semibold">Управление записью</h2>
+                <div id="current-speaker" class="text-sm text-gray-300">
+                    Готов к работе
+                </div>
+            </div>
+            
+            <div class="flex items-center space-x-4">
+                <!-- Language Selection -->
+                <div class="flex items-center space-x-2">
+                    <label for="language" class="text-sm font-medium">Язык:</label>
+                    <select id="language" class="bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm">
+                        <option value="auto">Авто-определение</option>
+                        <option value="ru-RU">Русский</option>
+                        <option value="en-US">English</option>
+                    </select>
+                </div>
+
+                <!-- Control Buttons -->
+                <button id="startButton" class="bg-green-600 hover:bg-green-700 px-6 py-2 rounded-lg font-medium transition-colors">
+                    🎤 Начать прослушивание
+                </button>
+                <button id="stopButton" class="bg-red-600 hover:bg-red-700 px-6 py-2 rounded-lg font-medium transition-colors" disabled>
+                    ⏹️ Остановить
+                </button>
+
+                <!-- Settings -->
+                <button id="settings-button" class="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded-lg transition-colors">
+                    ⚙️ Настройки
+                </button>
+
+                <!-- Teleprompter -->
+                <button id="teleprompter-btn" class="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg transition-colors">
+                    📺 Телепромптер
+                </button>
+            </div>
+        </div>
+
+        <!-- Live Transcript -->
+        <div class="grid lg:grid-cols-2 gap-6 mb-6">
+            <!-- Current Recognition -->
+            <div class="glass-effect rounded-xl p-6">
+                <h3 class="text-lg font-semibold mb-4">Текущая транскрипция</h3>
+                <div class="min-h-[100px] p-4 bg-black bg-opacity-20 rounded-lg">
+                    <div id="interim-transcript" class="text-gray-300 italic">
+                        Ожидание речи...
+                    </div>
+                </div>
+            </div>
+
+            <!-- Progress & Analytics -->
+            <div class="glass-effect rounded-xl p-6">
+                <h3 class="text-lg font-semibold mb-4">Статус обработки</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm">Прогресс анализа:</span>
+                        <div class="w-32 bg-gray-600 rounded-full h-2">
+                            <div id="progress-bar" class="bg-blue-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="text-sm text-gray-300">
+                        <div>📊 P1 (VB Cable): <span id="p1-sentences-count">0</span> предложений</div>
+                        <div>📊 P2 (Микрофон): <span id="p2-sentences-count">0</span> предложений</div>
+                        <div>❓ Вопросов обнаружено: <span id="questions-count">0</span></div>
+                        <div>🤖 Ответов AI: <span id="responses-count">0</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Conversation History -->
+        <div class="glass-effect rounded-xl p-6 mb-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold">История разговора</h3>
+                <div class="flex space-x-2">
+                    <button id="save-conversation-btn" class="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-sm transition-colors">
+                        💾 Сохранить
+                    </button>
+                    <button id="clear-session-btn" class="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded text-sm transition-colors">
+                        🗑️ Очистить
+                    </button>
+                </div>
+            </div>
+            <div id="final-transcript" class="max-h-60 overflow-y-auto space-y-2">
+                <div class="text-gray-400 text-center py-4">
+                    История разговора появится здесь после начала записи
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Responses -->
+        <div class="glass-effect rounded-xl p-6">
+            <h3 class="text-lg font-semibold mb-4">AI Ответы и Подсказки</h3>
+            <div id="ai-response-area" class="min-h-[200px]">
+                <div id="ai-placeholder" class="text-gray-400 text-center py-8">
+                    <div class="text-4xl mb-2">🤖</div>
+                    <div>AI подсказки появятся здесь когда будет обнаружен вопрос</div>
+                    <div class="text-sm mt-2">Система автоматически определяет вопросы из VB Cable канала</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" style="display: none;">
+        <div class="glass-effect rounded-xl p-6 w-full max-w-md mx-4">
+            <h3 class="text-xl font-semibold mb-4">Настройки</h3>
+            
+            <div class="space-y-4">
+                <div>
+                    <label for="modal-apiKey-input" class="block text-sm font-medium mb-2">OpenAI API Key:</label>
+                    <input type="password" id="modal-apiKey-input" 
+                           class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                           placeholder="sk-...">
+                </div>
+                
+                <div>
+                    <label for="modal-topic-input" class="block text-sm font-medium mb-2">Тема интервью:</label>
+                    <input type="text" id="modal-topic-input" 
+                           class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                           placeholder="Например: Frontend разработка">
+                </div>
+                
+                <div>
+                    <label for="modal-delay-input" class="block text-sm font-medium mb-2">Задержка обработки (сек):</label>
+                    <input type="number" id="modal-delay-input" min="1" max="10" value="3"
+                           class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white">
+                </div>
+
+                <div class="flex items-center">
+                    <input type="checkbox" id="demo-mode-checkbox" class="mr-2">
+                    <label for="demo-mode-checkbox" class="text-sm">Демо режим</label>
+                </div>
+            </div>
+            
+            <div class="flex justify-end space-x-3 mt-6">
+                <button id="modal-cancel-button" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg transition-colors">
+                    Отмена
+                </button>
+                <button id="modal-save-button" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">
+                    Сохранить
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load JavaScript modules -->
+    <script src="js/demo-mode.js"></script>
+    <script src="js/channel-manager.js"></script>
+    <script src="js/audio-manager.js"></script>
+    <script src="js/speech-recognition-manager.js"></script>
+    <script src="js/ai-service.js"></script>
+    <script src="js/conversation-manager.js"></script>
+    <script src="js/ui-manager.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
