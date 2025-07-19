@@ -75,6 +75,9 @@
             <div class="flex items-center justify-between mb-4">
                 <h2 class="text-xl font-semibold">Управление</h2>
                 <div class="flex space-x-3">
+                    <button id="diagnose-vbcable" class="bg-yellow-600 hover:bg-yellow-700 px-4 py-2 rounded-lg font-medium transition-colors">
+                        🔍 Диагностика VB-Cable
+                    </button>
                     <button id="refresh-devices" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-medium transition-colors">
                         Обновить устройства
                     </button>
@@ -140,6 +143,9 @@
                 <button id="test-devices" class="bg-yellow-600 hover:bg-yellow-700 px-4 py-2 rounded-lg font-medium transition-colors">
                     Тест устройств
                 </button>
+                <button id="test-vb-cable" class="bg-orange-600 hover:bg-orange-700 px-4 py-2 rounded-lg font-medium transition-colors">
+                    🔧 Тест VB-Cable
+                </button>
                 <button id="show-permissions" class="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg font-medium transition-colors">
                     Проверить разрешения
                 </button>
@@ -178,6 +184,7 @@
                 this.connectionText = document.getElementById('connection-text');
                 this.captureStatus = document.getElementById('capture-status');
                 
+                this.diagnoseVBCableBtn = document.getElementById('diagnose-vbcable');
                 this.refreshDevicesBtn = document.getElementById('refresh-devices');
                 this.startCaptureBtn = document.getElementById('start-capture');
                 this.stopCaptureBtn = document.getElementById('stop-capture');
@@ -191,6 +198,7 @@
                 this.testP1Btn = document.getElementById('test-p1');
                 this.testP2Btn = document.getElementById('test-p2');
                 this.testDevicesBtn = document.getElementById('test-devices');
+                this.testVBCableBtn = document.getElementById('test-vb-cable');
                 this.showPermissionsBtn = document.getElementById('show-permissions');
                 
                 this.logContainer = document.getElementById('log-container');
@@ -198,6 +206,7 @@
             }
 
             bindEvents() {
+                this.diagnoseVBCableBtn.addEventListener('click', () => this.diagnoseVBCable());
                 this.refreshDevicesBtn.addEventListener('click', () => this.refreshDevices());
                 this.startCaptureBtn.addEventListener('click', () => this.startCapture());
                 this.stopCaptureBtn.addEventListener('click', () => this.stopCapture());
@@ -205,6 +214,7 @@
                 this.testP1Btn.addEventListener('click', () => this.testAudioChunk('P1'));
                 this.testP2Btn.addEventListener('click', () => this.testAudioChunk('P2'));
                 this.testDevicesBtn.addEventListener('click', () => this.testAllDevices());
+                this.testVBCableBtn.addEventListener('click', () => this.diagnoseVBCable());
                 this.showPermissionsBtn.addEventListener('click', () => this.checkPermissions());
                 
                 this.clearLogBtn.addEventListener('click', () => this.clearLog());
@@ -376,6 +386,125 @@
                     this.log('Тестирование всех устройств завершено', 'success');
                 } catch (error) {
                     this.log(`Ошибка тестирования устройств: ${error.message}`, 'error');
+                }
+            }
+
+            async diagnoseVBCable() {
+                this.log('🔍 Начинаю диагностику VB-Cable...', 'info');
+                
+                try {
+                    // Check if VB-Cable is installed (check available devices)
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    const audioInputs = devices.filter(device => device.kind === 'audioinput');
+                    
+                    this.log(`Найдено аудио устройств: ${audioInputs.length}`, 'info');
+                    
+                    // Look for VB-Cable devices
+                    const vbCableDevices = audioInputs.filter(device => 
+                        device.label.toLowerCase().includes('cable') || 
+                        device.label.toLowerCase().includes('vb-audio') ||
+                        device.label.toLowerCase().includes('vb cable') ||
+                        device.label.toLowerCase().includes('vbcable') ||
+                        device.label.toLowerCase().includes('virtual audio cable')
+                    );
+                    
+                    if (vbCableDevices.length === 0) {
+                        this.log('❌ VB-Cable устройство не найдено', 'error');
+                        this.log('📋 Доступные аудио устройства:', 'info');
+                        audioInputs.forEach((device, index) => {
+                            this.log(`${index + 1}. ${device.label}`, 'info');
+                        });
+                        
+                        this.log('💡 Возможные решения:', 'warning');
+                        this.log('1. Установите VB-Cable с официального сайта: https://vb-audio.com/Cable/', 'warning');
+                        this.log('2. Перезапустите браузер после установки', 'warning');
+                        this.log('3. Проверьте настройки звука в системе', 'warning');
+                        return;
+                    }
+                    
+                    this.log(`✅ Найдено VB-Cable устройств: ${vbCableDevices.length}`, 'success');
+                    vbCableDevices.forEach((device, index) => {
+                        this.log(`${index + 1}. ${device.label}`, 'success');
+                    });
+                    
+                    // Test each VB-Cable device
+                    for (const device of vbCableDevices) {
+                        this.log(`🧪 Тестирую: ${device.label}`, 'info');
+                        
+                        try {
+                            const stream = await navigator.mediaDevices.getUserMedia({
+                                audio: {
+                                    deviceId: { exact: device.deviceId },
+                                    echoCancellation: false,
+                                    noiseSuppression: false,
+                                    autoGainControl: false
+                                }
+                            });
+                            
+                            this.log(`✅ Успешно получен поток от: ${device.label}`, 'success');
+                            
+                            // Test audio levels
+                            const audioContext = new AudioContext();
+                            const source = audioContext.createMediaStreamSource(stream);
+                            const analyser = audioContext.createAnalyser();
+                            source.connect(analyser);
+                            
+                            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                            let maxLevel = 0;
+                            let testCount = 0;
+                            
+                            const testAudio = () => {
+                                analyser.getByteTimeDomainData(dataArray);
+                                let sum = 0;
+                                for (let i = 0; i < dataArray.length; i++) {
+                                    const sample = (dataArray[i] - 128) / 128;
+                                    sum += sample * sample;
+                                }
+                                const rms = Math.sqrt(sum / dataArray.length);
+                                const level = rms * 100;
+                                maxLevel = Math.max(maxLevel, level);
+                                testCount++;
+                                
+                                if (testCount < 50) { // Test for ~1 second
+                                    requestAnimationFrame(testAudio);
+                                } else {
+                                    stream.getTracks().forEach(track => track.stop());
+                                    audioContext.close();
+                                    
+                                    if (maxLevel < 1) {
+                                        this.log(`⚠️ ${device.label}: Нет аудио сигнала (уровень: ${maxLevel.toFixed(2)}%)`, 'warning');
+                                        this.log('💡 Убедитесь, что аудио источник (Zoom/Meet) направляет звук в VB-Cable', 'warning');
+                                    } else {
+                                        this.log(`✅ ${device.label}: Есть аудио сигнал (макс. уровень: ${maxLevel.toFixed(2)}%)`, 'success');
+                                    }
+                                }
+                            };
+                            
+                            testAudio();
+                            
+                        } catch (deviceError) {
+                            this.log(`❌ Ошибка тестирования ${device.label}: ${deviceError.message}`, 'error');
+                        }
+                        
+                        // Small delay between device tests
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+                    }
+                    
+                    // Check microphone permissions
+                    if (navigator.permissions) {
+                        try {
+                            const permission = await navigator.permissions.query({ name: 'microphone' });
+                            this.log(`🎤 Разрешение микрофона: ${permission.state}`, 
+                                    permission.state === 'granted' ? 'success' : 'warning');
+                        } catch (permError) {
+                            this.log('ℹ️ Не удалось проверить разрешения микрофона', 'info');
+                        }
+                    }
+                    
+                    this.log('🏁 Диагностика VB-Cable завершена', 'success');
+                    
+                } catch (error) {
+                    this.log(`❌ Ошибка диагностики: ${error.message}`, 'error');
                 }
             }
 
