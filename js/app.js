@@ -642,22 +642,32 @@ class App {
             // Add a small delay for Safari compatibility
             setTimeout(() => {
                 try {
-                    // Send the response content
-                    this.teleprompterChannel.postMessage({ 
-                        type: 'token', 
-                        data: response 
-                    });
+                    // Split response into chunks for smooth streaming effect
+                    const chunks = this.splitIntoChunks(response, 50); // Split into ~50 character chunks
+                    let chunkIndex = 0;
                     
-                    // Add another small delay before ending
-                    setTimeout(() => {
-                        try {
-                            // End teleprompter display
-                            this.teleprompterChannel.postMessage({ type: 'end' });
-                            console.log('Response sent to teleprompter successfully');
-                        } catch (endError) {
-                            console.error('Failed to send end message to teleprompter:', endError);
+                    const sendChunk = () => {
+                        if (chunkIndex < chunks.length) {
+                            this.teleprompterChannel.postMessage({ 
+                                type: 'token', 
+                                data: chunks[chunkIndex] 
+                            });
+                            chunkIndex++;
+                            setTimeout(sendChunk, 30); // 30ms delay between chunks for smooth effect
+                        } else {
+                            // All chunks sent, now end the display
+                            setTimeout(() => {
+                                try {
+                                    this.teleprompterChannel.postMessage({ type: 'end' });
+                                    console.log('Response sent to teleprompter successfully');
+                                } catch (endError) {
+                                    console.error('Failed to send end message to teleprompter:', endError);
+                                }
+                            }, 100);
                         }
-                    }, 100);
+                    };
+                    
+                    sendChunk();
                     
                 } catch (contentError) {
                     console.error('Failed to send content to teleprompter:', contentError);
@@ -667,6 +677,32 @@ class App {
         } catch (error) {
             console.error('Failed to send response to teleprompter:', error);
         }
+    }
+
+    splitIntoChunks(text, maxChunkSize) {
+        const chunks = [];
+        const words = text.split(' ');
+        let currentChunk = '';
+        
+        for (const word of words) {
+            if (currentChunk.length + word.length + 1 <= maxChunkSize) {
+                currentChunk += (currentChunk ? ' ' : '') + word;
+            } else {
+                if (currentChunk) {
+                    chunks.push(currentChunk);
+                    currentChunk = word;
+                } else {
+                    // Word is longer than maxChunkSize, split it
+                    chunks.push(word);
+                }
+            }
+        }
+        
+        if (currentChunk) {
+            chunks.push(currentChunk);
+        }
+        
+        return chunks;
     }
 
     openTeleprompter() {

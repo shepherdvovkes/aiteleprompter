@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест телепромптера</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Arial', sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto p-8">
+        <h1 class="text-3xl font-bold text-center mb-8">Тест функционала телепромптера</h1>
+        
+        <div class="bg-white rounded-lg shadow-lg p-6 max-w-2xl mx-auto">
+            <h2 class="text-xl font-semibold mb-4">Инструкции по тестированию:</h2>
+            
+            <ol class="list-decimal list-inside space-y-3 mb-6">
+                <li>Откройте телепромптер, нажав кнопку ниже</li>
+                <li>Нажмите "Отправить тестовый ответ", чтобы протестировать плавную прокрутку</li>
+                <li>В телепромптере попробуйте кнопки pause/play (пробел)</li>
+                <li>Проверьте, что прокрутка работает плавно при появлении текста</li>
+                <li>Проверьте, что состояние pause/play сохраняется при получении нового контента</li>
+            </ol>
+
+            <div class="space-y-4">
+                <button id="open-teleprompter" class="w-full bg-blue-500 text-white py-3 px-6 rounded-lg hover:bg-blue-600 transition-colors">
+                    Открыть телепромптер
+                </button>
+                
+                <button id="send-test-response" class="w-full bg-green-500 text-white py-3 px-6 rounded-lg hover:bg-green-600 transition-colors">
+                    Отправить тестовый ответ
+                </button>
+                
+                <button id="send-long-response" class="w-full bg-purple-500 text-white py-3 px-6 rounded-lg hover:bg-purple-600 transition-colors">
+                    Отправить длинный ответ
+                </button>
+            </div>
+
+            <div class="mt-6 p-4 bg-gray-50 rounded-lg">
+                <h3 class="font-semibold mb-2">Клавиатурные сокращения в телепромптере:</h3>
+                <ul class="text-sm space-y-1">
+                    <li><kbd class="bg-gray-200 px-1 rounded">Пробел</kbd> - Play/Pause</li>
+                    <li><kbd class="bg-gray-200 px-1 rounded">↑</kbd> - Увеличить скорость</li>
+                    <li><kbd class="bg-gray-200 px-1 rounded">↓</kbd> - Уменьшить скорость</li>
+                    <li><kbd class="bg-gray-200 px-1 rounded">←</kbd> - Уменьшить шрифт</li>
+                    <li><kbd class="bg-gray-200 px-1 rounded">→</kbd> - Увеличить шрифт</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Teleprompter communication channel
+        const teleprompterChannel = new BroadcastChannel('teleprompter_channel');
+        let teleprompterWindow = null;
+
+        document.getElementById('open-teleprompter').addEventListener('click', () => {
+            try {
+                teleprompterWindow = window.open(
+                    'teleprompter.html',
+                    'teleprompter',
+                    'width=800,height=600,scrollbars=no,resizable=yes'
+                );
+                
+                if (!teleprompterWindow) {
+                    throw new Error('Не удалось открыть окно телепромптера. Разрешите всплывающие окна для этого сайта.');
+                }
+                
+                document.getElementById('open-teleprompter').textContent = 'Телепромптер открыт!';
+                document.getElementById('open-teleprompter').className = 'w-full bg-gray-500 text-white py-3 px-6 rounded-lg cursor-not-allowed';
+                document.getElementById('open-teleprompter').disabled = true;
+                
+            } catch (error) {
+                alert('Ошибка: ' + error.message);
+            }
+        });
+
+        function sendToTeleprompter(response) {
+            try {
+                if (!teleprompterChannel) {
+                    alert('Канал связи с телепромптером не доступен');
+                    return;
+                }
+
+                // Start teleprompter display
+                teleprompterChannel.postMessage({ type: 'start' });
+                
+                // Split response into chunks for smooth streaming effect
+                const chunks = splitIntoChunks(response, 50);
+                let chunkIndex = 0;
+                
+                const sendChunk = () => {
+                    if (chunkIndex < chunks.length) {
+                        teleprompterChannel.postMessage({ 
+                            type: 'token', 
+                            data: chunks[chunkIndex] 
+                        });
+                        chunkIndex++;
+                        setTimeout(sendChunk, 50); // 50ms delay between chunks
+                    } else {
+                        // All chunks sent, now end the display
+                        setTimeout(() => {
+                            teleprompterChannel.postMessage({ type: 'end' });
+                            console.log('Ответ отправлен в телепромптер');
+                        }, 100);
+                    }
+                };
+                
+                setTimeout(sendChunk, 100);
+                
+            } catch (error) {
+                console.error('Ошибка отправки в телепромптер:', error);
+                alert('Ошибка отправки в телепромптер: ' + error.message);
+            }
+        }
+
+        function splitIntoChunks(text, maxChunkSize) {
+            const chunks = [];
+            const words = text.split(' ');
+            let currentChunk = '';
+            
+            for (const word of words) {
+                if (currentChunk.length + word.length + 1 <= maxChunkSize) {
+                    currentChunk += (currentChunk ? ' ' : '') + word;
+                } else {
+                    if (currentChunk) {
+                        chunks.push(currentChunk);
+                        currentChunk = word;
+                    } else {
+                        chunks.push(word);
+                    }
+                }
+            }
+            
+            if (currentChunk) {
+                chunks.push(currentChunk);
+            }
+            
+            return chunks;
+        }
+
+        document.getElementById('send-test-response').addEventListener('click', () => {
+            const testResponse = `Добро пожаловать в обновленный телепромптер! 
+
+Теперь кнопки pause и play работают корректно. Вы можете:
+
+• Приостановить прокрутку кнопкой pause или пробелом
+• Возобновить прокрутку кнопкой play или пробелом
+• Наслаждаться плавной прокруткой при появлении нового контента
+
+Состояние прокрутки сохраняется даже при получении нового контента. Если вы поставили на паузу, новый контент не будет автоматически прокручиваться.
+
+Попробуйте нажать пробел для переключения между pause и play!`;
+
+            sendToTeleprompter(testResponse);
+        });
+
+        document.getElementById('send-long-response').addEventListener('click', () => {
+            const longResponse = `Это длинный тестовый ответ для демонстрации плавной прокрутки в телепромптере.
+
+ТЕХНИЧЕСКИЕ УЛУЧШЕНИЯ:
+
+1. Исправлен функционал кнопок pause/play
+   - Кнопки теперь корректно переключают состояние прокрутки
+   - Иконки обновляются в соответствии с текущим состоянием
+   - Добавлена поддержка клавиатурных сокращений
+
+2. Реализована плавная прокрутка
+   - Контент прокручивается плавно при появлении
+   - Используется интерполяция для гладкого движения
+   - Автоматическая прокрутка к новому контенту
+
+3. Улучшено управление состоянием
+   - Состояние pause/play сохраняется при получении нового контента
+   - Предотвращение конфликтов между автоматической и ручной прокруткой
+   - Лучшая обратная связь для пользователя
+
+4. Потоковая передача контента
+   - Контент отправляется частями для создания эффекта печати
+   - Настраиваемые интервалы между частями
+   - Плавная интеграция с системой прокрутки
+
+КЛАВИАТУРНЫЕ СОКРАЩЕНИЯ:
+- Пробел: переключение play/pause
+- Стрелка вверх: увеличение скорости
+- Стрелка вниз: уменьшение скорости  
+- Стрелка влево: уменьшение размера шрифта
+- Стрелка вправо: увеличение размера шрифта
+
+ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ:
+- Зеркальное отражение текста
+- Настройка скорости прокрутки
+- Настройка размера шрифта
+- Ручная прокрутка колесом мыши
+- Градиентная маска для плавного появления/исчезновения текста
+
+Все эти улучшения делают телепромптер более удобным и профессиональным инструментом для презентаций и выступлений.
+
+Попробуйте различные функции и убедитесь, что все работает как ожидается!`;
+
+            sendToTeleprompter(longResponse);
+        });
+
+        // Handle teleprompter window close
+        window.addEventListener('beforeunload', () => {
+            if (teleprompterChannel) {
+                teleprompterChannel.close();
+            }
+        });
+    </script>
+</body>
+</html>
