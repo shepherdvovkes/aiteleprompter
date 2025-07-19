@@ -18,10 +18,19 @@ class App {
         this.rawConversationBuffer = [];
         this.analysisQueue = [];
         this.lastProcessedQuestions = [];
+        this.recentQuestions = []; // Store recent questions for follow-up detection
         this.questionContext = '';
         this.aiResponses = [];
         this.sessionStartTime = null;
         this.responseIdCounter = 0;
+        
+        // Question processing delay management
+        this.questionProcessingDelay = 3000; // 3 seconds delay after last sentence
+        this.questionProcessingTimer = null;
+        this.countdownInterval = null;
+        this.pendingSentences = []; // Buffer for sentences waiting to be processed
+        this.maxSentenceBuffer = 5; // Maximum sentences to buffer
+        this.lastSentenceTime = null;
         
         // Teleprompter communication channel
         this.teleprompterChannel = new BroadcastChannel('teleprompter_channel');
@@ -58,6 +67,8 @@ class App {
         this.settingsModal = document.getElementById('settings-modal');
         this.modalApiKeyInput = document.getElementById('modal-apiKey-input');
         this.modalTopicInput = document.getElementById('modal-topic-input');
+        this.modalDelayInput = document.getElementById('modal-delay-input');
+        this.demoModeCheckbox = document.getElementById('demo-mode-checkbox');
         this.modalSaveButton = document.getElementById('modal-save-button');
         this.modalCancelButton = document.getElementById('modal-cancel-button');
     }
@@ -124,12 +135,22 @@ class App {
         // Load settings from localStorage
         const apiKey = localStorage.getItem('openai_api_key') || '';
         const topic = localStorage.getItem('conversation_topic') || '';
+        const delay = localStorage.getItem('question_processing_delay') || '3';
+        const demoMode = localStorage.getItem('demo_mode') === 'true';
         
         this.modalApiKeyInput.value = apiKey;
         this.modalTopicInput.value = topic;
+        this.modalDelayInput.value = delay;
+        this.demoModeCheckbox.checked = demoMode;
         
         this.aiService.setApiKey(apiKey);
         this.aiService.setConversationTopic(topic);
+        this.questionProcessingDelay = parseFloat(delay) * 1000; // Convert to milliseconds
+        
+        // Set demo mode
+        if (demoMode) {
+            window.demoMode.enable();
+        }
         
         // Check for session backup
         this.checkSessionBackup();
@@ -193,12 +214,15 @@ class App {
             const selectedLang = this.languageSelect.value;
             const language = selectedLang === 'auto' ? 'ru-RU' : selectedLang;
             
-            // Start speech recognition
-            const success = await this.speechManager.startListening(language);
+            // Start speech recognition in continuous mode
+            const success = await this.speechManager.startListening(language, true);
             
             if (success) {
                 this.updateButtonStates(true);
                 this.clearDisplays();
+                
+                // Show continuous mode indicator
+                this.showContinuousModeIndicator();
             } else {
                 this.updateStatus('error', 'Failed to start listening');
             }
@@ -214,6 +238,17 @@ class App {
         
         this.speechManager.stopListening();
         this.updateButtonStates(false);
+        
+        // Hide continuous mode indicator
+        this.hideContinuousModeIndicator();
+        this.hidePendingQuestionsIndicator();
+        
+        // Process any remaining pending questions before stopping
+        if (this.pendingSentences.length > 0) {
+            console.log('Processing remaining pending questions before stop');
+            clearTimeout(this.questionProcessingTimer);
+            this.processDelayedQuestions();
+        }
     }
 
     updateStatus(status, message) {
@@ -256,8 +291,38 @@ class App {
         // Update speaker status
         this.currentSpeakerDiv.textContent = 'Recording...';
         
-        // Process for questions
-        await this.processForQuestions(sentence);
+        // Add to pending sentences buffer
+        this.pendingSentences.push({
+            text: sentence,
+            timestamp: Date.now()
+        });
+        
+        // Keep buffer size manageable
+        if (this.pendingSentences.length > this.maxSentenceBuffer) {
+            this.pendingSentences.shift();
+        }
+        
+        this.lastSentenceTime = Date.now();
+        
+        // Clear existing timer and set new one for delayed processing
+        if (this.questionProcessingTimer) {
+            clearTimeout(this.questionProcessingTimer);
+        }
+        
+        this.questionProcessingTimer = setTimeout(() => {
+            this.processDelayedQuestions();
+        }, this.questionProcessingDelay);
+        
+        // Start countdown timer for the indicator
+        this.startCountdownTimer();
+        
+        // Also do immediate check for urgent/complete questions
+        const processedImmediately = await this.checkForImmediateQuestions(sentence);
+        
+        // Show pending indicator if we have buffered sentences waiting for processing
+        if (this.pendingSentences.length > 0 && !processedImmediately) {
+            this.showPendingQuestionsIndicator();
+        }
     }
 
     addToTranscriptDisplay(sentence) {
@@ -294,18 +359,259 @@ class App {
         }
     }
 
-    async handleQuestionsDetected(analysis, context) {
+    async checkForImmediateQuestions(sentence) {
+        try {
+            const trimmedSentence = sentence.trim();
+            
+            // Check for complete questions with punctuation
+            const hasQuestionPunctuation = /[?!]\s*$/.test(trimmedSentence);
+            
+            // Question word patterns (English and Russian)
+            const questionWords = /^(что|как|где|когда|почему|зачем|кто|какой|какая|какое|какие|which|what|how|where|when|why|who|whose|whom)/i;
+            const auxiliaryQuestions = /^(can|could|would|should|will|do|does|did|is|are|was|were|have|has|had)/i;
+            
+            // Check for complete questions
+            const isCompleteQuestion = hasQuestionPunctuation && 
+                                     (questionWords.test(trimmedSentence) || auxiliaryQuestions.test(trimmedSentence));
+            
+            // Check for obvious standalone questions even without punctuation
+            const isStandaloneQuestion = !hasQuestionPunctuation && questionWords.test(trimmedSentence) && 
+                                       trimmedSentence.split(' ').length >= 3; // At least 3 words
+            
+            // Check for short potential continuation indicators
+            const isContinuationIndicator = /^(и|а|но|также|плюс|ещё|еще|кроме того|and|also|plus|additionally|furthermore|moreover)\s/i.test(trimmedSentence);
+            
+            if (isCompleteQuestion || isStandaloneQuestion) {
+                console.log('Detected immediate question, processing now:', trimmedSentence);
+                const contextSentences = this.rawConversationBuffer.slice(-3);
+                const context = contextSentences.join(' ');
+                
+                const analysis = await this.aiService.processTextAnalysis(sentence, context);
+                
+                if (analysis && analysis.questions.length > 0) {
+                    // Remove this sentence from pending buffer since we're processing it now
+                    this.pendingSentences = this.pendingSentences.filter(s => s.text !== sentence);
+                    
+                    // Mark questions as immediate and handle them
+                    analysis.questions.forEach(q => q.questionType = 'immediate');
+                    await this.handleQuestionsDetected(analysis, context, 'immediate');
+                    return true; // Indicate that we processed this immediately
+                }
+            } else if (isContinuationIndicator && this.pendingSentences.length > 0) {
+                // This might be a continuation, extend the delay slightly
+                console.log('Detected potential continuation word, extending delay');
+                if (this.questionProcessingTimer) {
+                    clearTimeout(this.questionProcessingTimer);
+                    this.questionProcessingTimer = setTimeout(() => {
+                        this.processDelayedQuestions();
+                    }, this.questionProcessingDelay + 1500); // Add extra 1.5 seconds for continuations
+                    
+                    // Restart countdown with extended time
+                    this.startCountdownTimer(this.questionProcessingDelay + 1500);
+                }
+            }
+            
+            return false; // Not processed immediately
+        } catch (error) {
+            console.error('Immediate question check failed:', error);
+            return false;
+        }
+    }
+
+    async processDelayedQuestions() {
+        if (this.pendingSentences.length === 0) {
+            return;
+        }
+
+        try {
+            console.log('Processing delayed questions for', this.pendingSentences.length, 'sentences');
+            
+            // Combine all pending sentences into a text block
+            const textBlock = this.pendingSentences.map(s => s.text).join(' ');
+            
+            // Create extended context from recent conversation
+            const contextSentences = this.rawConversationBuffer.slice(-8);
+            const context = contextSentences.join(' ');
+            
+            // First, check for follow-up questions related to recent questions
+            const followUpAnalysis = await this.aiService.detectFollowUpQuestions(
+                textBlock, 
+                context, 
+                this.recentQuestions.slice(-5) // Last 5 questions for context
+            );
+            
+            // Process follow-up questions with high priority
+            if (followUpAnalysis.has_follow_up && followUpAnalysis.follow_up_questions.length > 0) {
+                console.log('Found follow-up questions:', followUpAnalysis.follow_up_questions);
+                
+                for (const followUpQ of followUpAnalysis.follow_up_questions) {
+                    if (followUpQ.priority === 'high') {
+                        // Generate response immediately for high-priority follow-ups
+                        await this.generateAndDisplayResponse(
+                            `${followUpQ.text} (Follow-up to: "${followUpQ.relates_to}")`, 
+                            context, 
+                            false, 
+                            null, 
+                            'follow-up'
+                        );
+                    }
+                }
+            }
+            
+            // Then analyze for regular questions
+            const analysis = await this.aiService.performSemanticAnalysis(textBlock, context);
+            
+            if (analysis && analysis.questions && analysis.questions.length > 0) {
+                // Store questions for future follow-up detection
+                analysis.questions.forEach(q => {
+                    this.recentQuestions.push({
+                        text: q.text,
+                        category: q.category || 'Unknown',
+                        timestamp: Date.now()
+                    });
+                });
+                
+                // Keep only recent questions (last 10)
+                if (this.recentQuestions.length > 10) {
+                    this.recentQuestions = this.recentQuestions.slice(-10);
+                }
+                
+                // Use enhanced question prioritization for delayed processing
+                const priority = await this.aiService.prioritizeQuestions(context, analysis.questions);
+                
+                if (priority.main_question) {
+                    console.log('Found delayed question:', priority.main_question);
+                    await this.handleQuestionsDetected({ 
+                        questions: analysis.questions, 
+                        priority: priority 
+                    }, context);
+                }
+            }
+            
+            // Clear pending sentences after processing
+            this.pendingSentences = [];
+            
+        } catch (error) {
+            console.error('Delayed question processing failed:', error);
+            // Clear pending sentences even on error to prevent buildup
+            this.pendingSentences = [];
+        } finally {
+            // Hide pending indicator
+            this.hidePendingQuestionsIndicator();
+        }
+    }
+
+    showPendingQuestionsIndicator() {
+        // Update status to show we're waiting for question completion
+        this.currentSpeakerDiv.textContent = `Waiting for question completion... (${this.pendingSentences.length} sentence${this.pendingSentences.length !== 1 ? 's' : ''})`;
+        this.currentSpeakerDiv.classList.add('text-yellow-400');
+        
+        // Show in AI response area
+        if (!document.getElementById('pending-questions-indicator')) {
+            const indicator = document.createElement('div');
+            indicator.id = 'pending-questions-indicator';
+            indicator.className = 'bg-yellow-900/30 border border-yellow-600 rounded-lg p-3 mb-4 text-yellow-200';
+            indicator.innerHTML = `
+                <div class="flex items-center">
+                    <svg class="animate-pulse h-4 w-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/>
+                    </svg>
+                    <span>Collecting question parts... Will process in ${this.questionProcessingDelay / 1000}s</span>
+                </div>
+            `;
+            
+            this.aiResponseArea.insertBefore(indicator, this.aiResponseArea.firstChild);
+        }
+    }
+
+    hidePendingQuestionsIndicator() {
+        // Reset status
+        this.currentSpeakerDiv.textContent = 'Recording...';
+        this.currentSpeakerDiv.classList.remove('text-yellow-400');
+        
+        // Remove indicator from AI response area
+        const indicator = document.getElementById('pending-questions-indicator');
+        if (indicator) {
+            indicator.remove();
+        }
+        
+        // Clear countdown timer
+        if (this.countdownInterval) {
+            clearInterval(this.countdownInterval);
+            this.countdownInterval = null;
+        }
+    }
+
+    showContinuousModeIndicator() {
+        const indicator = document.createElement('div');
+        indicator.id = 'continuous-mode-indicator';
+        indicator.className = 'bg-green-900/30 border border-green-600 rounded-lg p-3 mb-4 text-green-200';
+        indicator.innerHTML = `
+            <div class="flex items-center">
+                <svg class="animate-pulse h-4 w-4 mr-2 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.293l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z" clip-rule="evenodd"/>
+                </svg>
+                <span>Continuous listening mode active - No questions will be missed!</span>
+            </div>
+        `;
+        
+        this.aiResponseArea.insertBefore(indicator, this.aiResponseArea.firstChild);
+        
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+            if (indicator && indicator.parentNode) {
+                indicator.remove();
+            }
+        }, 5000);
+    }
+
+    hideContinuousModeIndicator() {
+        const indicator = document.getElementById('continuous-mode-indicator');
+        if (indicator) {
+            indicator.remove();
+        }
+    }
+
+    startCountdownTimer(extendedDelay = null) {
+        if (this.countdownInterval) {
+            clearInterval(this.countdownInterval);
+        }
+        
+        const startTime = Date.now();
+        const delay = extendedDelay || this.questionProcessingDelay;
+        const endTime = startTime + delay;
+        
+        this.countdownInterval = setInterval(() => {
+            const remaining = Math.max(0, endTime - Date.now());
+            const seconds = (remaining / 1000).toFixed(1);
+            
+            const indicator = document.getElementById('pending-questions-indicator');
+            if (indicator) {
+                const span = indicator.querySelector('span');
+                if (span) {
+                    span.textContent = `Collecting question parts... Will process in ${seconds}s`;
+                }
+            }
+            
+            if (remaining <= 0) {
+                clearInterval(this.countdownInterval);
+                this.countdownInterval = null;
+            }
+        }, 100); // Update every 100ms for smooth countdown
+    }
+
+    async handleQuestionsDetected(analysis, context, questionType = 'regular') {
         const { questions, priority } = analysis;
         
         if (priority.main_question) {
-            await this.generateAndDisplayResponse(priority.main_question, context);
+            await this.generateAndDisplayResponse(priority.main_question, context, false, null, questionType);
         }
         
         // Display all detected questions for reference
         this.displayDetectedQuestions(questions);
     }
 
-    async generateAndDisplayResponse(question, context, isRegeneration = false, existingResponseId = null) {
+    async generateAndDisplayResponse(question, context, isRegeneration = false, existingResponseId = null, questionType = 'regular') {
         try {
             this.showProgress(true);
             
@@ -323,7 +629,7 @@ class App {
             if (isRegeneration && existingResponseId) {
                 this.updateExistingResponse(existingResponseId, question, response);
             } else {
-                this.displayAIResponse(question, response);
+                this.displayAIResponse(question, response, questionType);
             }
             
         } catch (error) {
@@ -359,7 +665,7 @@ class App {
         this.aiResponseArea.scrollTop = this.aiResponseArea.scrollHeight;
     }
 
-    displayAIResponse(question, response) {
+    displayAIResponse(question, response, questionType = 'regular') {
         // Hide placeholder if visible
         if (this.aiPlaceholder && this.aiPlaceholder.parentNode) {
             this.aiPlaceholder.remove();
@@ -372,7 +678,8 @@ class App {
         const { container, regenerateBtn, responseEl } = this.uiManager.createResponseContainer(
             question, 
             this.formatResponse(response), 
-            responseId
+            responseId,
+            questionType
         );
         
         // Store response data
@@ -533,12 +840,33 @@ class App {
     saveSettings() {
         const apiKey = this.modalApiKeyInput.value.trim();
         const topic = this.modalTopicInput.value.trim();
+        const delay = this.modalDelayInput.value.trim();
+        const demoMode = this.demoModeCheckbox.checked;
+        
+        // Validate delay value
+        const delayFloat = parseFloat(delay);
+        if (isNaN(delayFloat) || delayFloat < 1 || delayFloat > 10) {
+            this.uiManager.showErrorMessage('Question processing delay must be between 1 and 10 seconds');
+            return;
+        }
         
         this.aiService.setApiKey(apiKey);
         this.aiService.setConversationTopic(topic);
+        this.questionProcessingDelay = delayFloat * 1000; // Convert to milliseconds
+        
+        // Save to localStorage
+        localStorage.setItem('question_processing_delay', delay);
+        localStorage.setItem('demo_mode', demoMode.toString());
+        
+        // Update demo mode
+        if (demoMode) {
+            window.demoMode.enable();
+        } else {
+            window.demoMode.disable();
+        }
         
         this.hideSettings();
-        console.log('Settings saved');
+        console.log('Settings saved, delay set to:', delayFloat, 'seconds', 'demo mode:', demoMode);
     }
 
     handleVisibilityChange() {
