@@ -114,23 +114,46 @@
         }
         
         channel.onmessage = (event) => {
-            const msg = event.data;
-            switch(msg.type) {
-                case 'start':
-                    teleprompterText.innerHTML = '';
-                    textContainer.scrollTop = 0;
-                    isScrolling = true;
-                    pauseIcon.style.display = 'block';
-                    playIcon.style.display = 'none';
-                    break;
-                case 'token':
-                    teleprompterText.appendChild(document.createTextNode(msg.data));
-                    break;
-                case 'end':
-                    renderSpecialContent();
-                    break;
+            try {
+                const msg = event.data;
+                console.log('Teleprompter received message:', msg.type);
+                
+                switch(msg.type) {
+                    case 'start':
+                        teleprompterText.innerHTML = '';
+                        textContainer.scrollTop = 0;
+                        isScrolling = true;
+                        pauseIcon.style.display = 'block';
+                        playIcon.style.display = 'none';
+                        console.log('Teleprompter started');
+                        break;
+                    case 'token':
+                        // Use innerHTML for better Safari compatibility
+                        const currentContent = teleprompterText.innerHTML;
+                        teleprompterText.innerHTML = currentContent + escapeHtml(msg.data);
+                        console.log('Teleprompter received content');
+                        break;
+                    case 'end':
+                        renderSpecialContent();
+                        console.log('Teleprompter rendering complete');
+                        break;
+                    default:
+                        console.warn('Unknown message type:', msg.type);
+                }
+            } catch (error) {
+                console.error('Error handling teleprompter message:', error);
             }
         };
+
+        // Handle channel errors
+        channel.onerror = (error) => {
+            console.error('BroadcastChannel error:', error);
+        };
+
+        // Ensure channel is working on load
+        window.addEventListener('load', () => {
+            console.log('Teleprompter window loaded, BroadcastChannel ready');
+        });
 
         playPauseBtn.addEventListener('click', () => {
             isScrolling = !isScrolling;

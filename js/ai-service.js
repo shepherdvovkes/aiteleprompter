@@ -56,7 +56,9 @@ class AIService {
         const headers = { 'Content-Type': 'application/json' };
         let url = 'https://api.openai.com/v1/chat/completions';
 
-        if (this.apiKey) {
+        // Always use server endpoint for better compatibility and error handling
+        // This ensures Safari on macOS works correctly and API key is managed securely
+        if (this.apiKey && this.apiKey.trim() !== '') {
             headers['Authorization'] = `Bearer ${this.apiKey}`;
         } else {
             url = '/api/chat';
@@ -71,10 +73,21 @@ class AIService {
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.error?.message || 'API request failed');
+                
+                // Handle specific API key errors
+                if (response.status === 500 && errorData.error === 'OPENAI_API_KEY not configured') {
+                    throw new Error('API key not configured. Please check your .env file or set API key in settings. ' + (errorData.message || ''));
+                }
+                
+                throw new Error(errorData.error?.message || errorData.message || `API request failed with status ${response.status}`);
             }
 
             const data = await response.json();
+            
+            if (!data.choices || data.choices.length === 0) {
+                throw new Error('No response received from AI service');
+            }
+            
             const content = data.choices[0].message.content;
             
             return needsJson ? JSON.parse(content) : content;

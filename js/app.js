@@ -23,6 +23,9 @@ class App {
         this.sessionStartTime = null;
         this.responseIdCounter = 0;
         
+        // Teleprompter communication channel
+        this.teleprompterChannel = new BroadcastChannel('teleprompter_channel');
+        
         // Initialize the application
         this.initialize();
     }
@@ -32,6 +35,7 @@ class App {
         this.startButton = document.getElementById('startButton');
         this.stopButton = document.getElementById('stopButton');
         this.settingsButton = document.getElementById('settings-button');
+        this.teleprompterBtn = document.getElementById('teleprompter-btn');
         this.saveConversationBtn = document.getElementById('save-conversation-btn');
         this.clearSessionBtn = document.getElementById('clear-session-btn');
         
@@ -64,6 +68,9 @@ class App {
         this.loadSettings();
         this.updateButtonStates();
         
+        // Show browser compatibility warning if needed
+        this.uiManager.showBrowserCompatibilityWarning();
+        
         console.log('Application initialized successfully');
     }
 
@@ -76,6 +83,9 @@ class App {
         this.settingsButton.addEventListener('click', () => this.showSettings());
         this.modalSaveButton.addEventListener('click', () => this.saveSettings());
         this.modalCancelButton.addEventListener('click', () => this.hideSettings());
+        
+        // Teleprompter
+        this.teleprompterBtn.addEventListener('click', () => this.openTeleprompter());
         
         // Conversation management
         this.saveConversationBtn.addEventListener('click', () => this.saveConversation());
@@ -318,7 +328,13 @@ class App {
             
         } catch (error) {
             console.error('Response generation failed:', error);
-            this.uiManager.showErrorMessage('Failed to generate response: ' + error.message);
+            
+            // Check if it's an API key configuration error
+            if (error.message.includes('API key not configured')) {
+                this.uiManager.showApiKeySetupInstructions();
+            } else {
+                this.uiManager.showErrorMessage('Failed to generate response: ' + error.message);
+            }
         } finally {
             this.showProgress(false);
             this.uiManager.hideQueueIndicator();
@@ -382,6 +398,9 @@ class App {
         
         // Auto-scroll with smooth animation
         this.uiManager.smoothScrollTo(container);
+        
+        // Send response to teleprompter window
+        this.sendToTeleprompter(response);
         
         // Save session backup
         this.saveSessionBackup();
@@ -604,7 +623,70 @@ class App {
         this.saveSessionBackup();
         this.speechManager.cleanup();
         this.audioManager.cleanup();
+        if (this.teleprompterChannel) {
+            this.teleprompterChannel.close();
+        }
         console.log('Application cleaned up');
+    }
+
+    sendToTeleprompter(response) {
+        try {
+            if (!this.teleprompterChannel) {
+                console.warn('Teleprompter channel not available');
+                return;
+            }
+
+            // Start teleprompter display
+            this.teleprompterChannel.postMessage({ type: 'start' });
+            
+            // Add a small delay for Safari compatibility
+            setTimeout(() => {
+                try {
+                    // Send the response content
+                    this.teleprompterChannel.postMessage({ 
+                        type: 'token', 
+                        data: response 
+                    });
+                    
+                    // Add another small delay before ending
+                    setTimeout(() => {
+                        try {
+                            // End teleprompter display
+                            this.teleprompterChannel.postMessage({ type: 'end' });
+                            console.log('Response sent to teleprompter successfully');
+                        } catch (endError) {
+                            console.error('Failed to send end message to teleprompter:', endError);
+                        }
+                    }, 100);
+                    
+                } catch (contentError) {
+                    console.error('Failed to send content to teleprompter:', contentError);
+                }
+            }, 100);
+            
+        } catch (error) {
+            console.error('Failed to send response to teleprompter:', error);
+        }
+    }
+
+    openTeleprompter() {
+        try {
+            const teleprompterWindow = window.open(
+                'teleprompter.html', 
+                'teleprompter', 
+                'width=800,height=600,scrollbars=no,resizable=yes,status=no,location=no,toolbar=no,menubar=no'
+            );
+            
+            if (!teleprompterWindow) {
+                throw new Error('Failed to open teleprompter window. Please allow popups for this site.');
+            }
+            
+            console.log('Teleprompter window opened successfully');
+            this.uiManager.showSuccessMessage('Teleprompter window opened!');
+        } catch (error) {
+            console.error('Failed to open teleprompter window:', error);
+            this.uiManager.showErrorMessage('Failed to open teleprompter: ' + error.message);
+        }
     }
 }
 
