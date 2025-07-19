@@ -374,10 +374,10 @@ class App {
     updateTranscriptDisplay(text, isFinal) {
         if (isFinal) {
             // Handle final transcript
-            this.interimTranscriptDiv.textContent = '...';
+            this.interimTranscriptDiv.textContent = 'Ожидание речи...';
         } else {
             // Handle interim transcript
-            this.interimTranscriptDiv.textContent = text || '...';
+            this.interimTranscriptDiv.textContent = text || 'Ожидание речи...';
         }
     }
 
