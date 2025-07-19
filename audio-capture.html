@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Capture - Interview Assistant</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            min-height: 100vh;
+        }
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .device-item {
+            transition: all 0.2s ease;
+        }
+        .device-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .device-active {
+            background: rgba(34, 197, 94, 0.2);
+            border-color: rgba(34, 197, 94, 0.5);
+        }
+        .level-meter {
+            height: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+        .level-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #10b981, #f59e0b, #ef4444);
+            transition: width 0.1s ease;
+            border-radius: 10px;
+        }
+        .pulse-animation {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white">
+    <div class="container mx-auto px-4 py-6">
+        <!-- Header -->
+        <div class="text-center mb-6">
+            <h1 class="text-3xl font-bold mb-2">Audio Capture</h1>
+            <p class="text-gray-300">Захват аудио для интервью-ассистента</p>
+        </div>
+
+        <!-- Connection Status -->
+        <div class="glass-effect rounded-lg p-4 mb-6">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <div id="connection-status" class="w-3 h-3 rounded-full bg-red-500"></div>
+                    <span id="connection-text">Подключение к серверу...</span>
+                </div>
+                <div class="text-sm">
+                    Статус захвата: <span id="capture-status" class="font-medium">Остановлен</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="glass-effect rounded-lg p-6 mb-6">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-semibold">Управление</h2>
+                <div class="flex space-x-3">
+                    <button id="refresh-devices" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-medium transition-colors">
+                        Обновить устройства
+                    </button>
+                    <button id="start-capture" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg font-medium transition-colors">
+                        Начать захват
+                    </button>
+                    <button id="stop-capture" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg font-medium transition-colors" disabled>
+                        Остановить захват
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Audio Devices -->
+        <div class="grid lg:grid-cols-2 gap-6 mb-6">
+            <!-- Available Devices -->
+            <div class="glass-effect rounded-lg p-6">
+                <h3 class="text-lg font-semibold mb-4">Доступные устройства</h3>
+                <div id="audio-devices" class="space-y-2">
+                    <div class="text-gray-400 text-sm">Загрузка устройств...</div>
+                </div>
+            </div>
+
+            <!-- Active Streams -->
+            <div class="glass-effect rounded-lg p-6">
+                <h3 class="text-lg font-semibold mb-4">Активные потоки</h3>
+                <div class="space-y-4">
+                    <!-- P1 Stream -->
+                    <div class="border border-red-500 border-opacity-30 rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="font-medium text-red-400">P1 - Интервьюер (VB Cable)</span>
+                            <span id="p1-stream-status" class="text-sm text-gray-400">Неактивен</span>
+                        </div>
+                        <div class="level-meter">
+                            <div id="p1-level" class="level-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- P2 Stream -->
+                    <div class="border border-green-500 border-opacity-30 rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="font-medium text-green-400">P2 - Собеседник (Микрофон)</span>
+                            <span id="p2-stream-status" class="text-sm text-gray-400">Неактивен</span>
+                        </div>
+                        <div class="level-meter">
+                            <div id="p2-level" class="level-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Test Section -->
+        <div class="glass-effect rounded-lg p-6 mb-6">
+            <h3 class="text-lg font-semibold mb-4">Тестирование</h3>
+            <div class="flex flex-wrap gap-3">
+                <button id="test-p1" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg font-medium transition-colors">
+                    Тест P1
+                </button>
+                <button id="test-p2" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg font-medium transition-colors">
+                    Тест P2
+                </button>
+                <button id="test-devices" class="bg-yellow-600 hover:bg-yellow-700 px-4 py-2 rounded-lg font-medium transition-colors">
+                    Тест устройств
+                </button>
+                <button id="show-permissions" class="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg font-medium transition-colors">
+                    Проверить разрешения
+                </button>
+            </div>
+        </div>
+
+        <!-- Log -->
+        <div class="glass-effect rounded-lg p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold">Лог событий</h3>
+                <button id="clear-log" class="text-sm bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded transition-colors">
+                    Очистить
+                </button>
+            </div>
+            <div id="log-container" class="bg-black bg-opacity-30 rounded-lg p-4 h-48 overflow-y-auto font-mono text-sm">
+                <div class="text-gray-400">Ожидание событий...</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/audio-capture.js"></script>
+    <script>
+        class AudioCaptureUI {
+            constructor() {
+                this.audioCapture = null;
+                this.isCapturing = false;
+                this.levelAnimationId = null;
+                
+                this.initElements();
+                this.bindEvents();
+                this.initialize();
+            }
+
+            initElements() {
+                this.connectionStatus = document.getElementById('connection-status');
+                this.connectionText = document.getElementById('connection-text');
+                this.captureStatus = document.getElementById('capture-status');
+                
+                this.refreshDevicesBtn = document.getElementById('refresh-devices');
+                this.startCaptureBtn = document.getElementById('start-capture');
+                this.stopCaptureBtn = document.getElementById('stop-capture');
+                
+                this.audioDevicesContainer = document.getElementById('audio-devices');
+                this.p1StreamStatus = document.getElementById('p1-stream-status');
+                this.p2StreamStatus = document.getElementById('p2-stream-status');
+                this.p1Level = document.getElementById('p1-level');
+                this.p2Level = document.getElementById('p2-level');
+                
+                this.testP1Btn = document.getElementById('test-p1');
+                this.testP2Btn = document.getElementById('test-p2');
+                this.testDevicesBtn = document.getElementById('test-devices');
+                this.showPermissionsBtn = document.getElementById('show-permissions');
+                
+                this.logContainer = document.getElementById('log-container');
+                this.clearLogBtn = document.getElementById('clear-log');
+            }
+
+            bindEvents() {
+                this.refreshDevicesBtn.addEventListener('click', () => this.refreshDevices());
+                this.startCaptureBtn.addEventListener('click', () => this.startCapture());
+                this.stopCaptureBtn.addEventListener('click', () => this.stopCapture());
+                
+                this.testP1Btn.addEventListener('click', () => this.testAudioChunk('P1'));
+                this.testP2Btn.addEventListener('click', () => this.testAudioChunk('P2'));
+                this.testDevicesBtn.addEventListener('click', () => this.testAllDevices());
+                this.showPermissionsBtn.addEventListener('click', () => this.checkPermissions());
+                
+                this.clearLogBtn.addEventListener('click', () => this.clearLog());
+            }
+
+            async initialize() {
+                this.log('Инициализация аудио захвата...', 'info');
+                
+                try {
+                    this.audioCapture = new AudioCapture();
+                    this.setupAudioCaptureEvents();
+                    this.updateConnectionStatus('connecting');
+                    
+                    // Wait a bit for connection
+                    setTimeout(() => {
+                        if (this.audioCapture.ws && this.audioCapture.ws.readyState === WebSocket.OPEN) {
+                            this.updateConnectionStatus('connected');
+                        }
+                    }, 1000);
+                    
+                    await this.refreshDevices();
+                    this.log('Инициализация завершена', 'success');
+                    
+                } catch (error) {
+                    this.log(`Ошибка инициализации: ${error.message}`, 'error');
+                    this.updateConnectionStatus('error');
+                }
+            }
+
+            setupAudioCaptureEvents() {
+                // Override some methods to update UI
+                const originalLog = console.log;
+                const self = this;
+                
+                // Monitor WebSocket connection
+                if (this.audioCapture.ws) {
+                    this.audioCapture.ws.addEventListener('open', () => {
+                        self.updateConnectionStatus('connected');
+                    });
+                    
+                    this.audioCapture.ws.addEventListener('close', () => {
+                        self.updateConnectionStatus('disconnected');
+                    });
+                }
+            }
+
+            updateConnectionStatus(status) {
+                const statusConfig = {
+                    'connecting': { color: 'bg-yellow-500', text: 'Подключение...' },
+                    'connected': { color: 'bg-green-500', text: 'Подключено' },
+                    'disconnected': { color: 'bg-red-500', text: 'Отключено' },
+                    'error': { color: 'bg-red-500', text: 'Ошибка' }
+                };
+                
+                const config = statusConfig[status] || statusConfig.disconnected;
+                this.connectionStatus.className = `w-3 h-3 rounded-full ${config.color}`;
+                this.connectionText.textContent = config.text;
+            }
+
+            async refreshDevices() {
+                this.log('Обновление списка устройств...', 'info');
+                
+                try {
+                    const devices = await this.audioCapture.getAudioDevices();
+                    this.renderDevices(devices);
+                    this.log(`Найдено устройств: ${devices.length}`, 'info');
+                } catch (error) {
+                    this.log(`Ошибка получения устройств: ${error.message}`, 'error');
+                }
+            }
+
+            renderDevices(devices) {
+                if (devices.length === 0) {
+                    this.audioDevicesContainer.innerHTML = '<div class="text-gray-400 text-sm">Устройства не найдены</div>';
+                    return;
+                }
+
+                this.audioDevicesContainer.innerHTML = devices.map(device => `
+                    <div class="device-item border border-gray-600 rounded-lg p-3">
+                        <div class="flex items-center justify-between">
+                            <div class="flex-1">
+                                <div class="font-medium">${device.label}</div>
+                                <div class="text-xs text-gray-400">${device.deviceId.substring(0, 20)}...</div>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                ${device.isVBCable ? '<span class="bg-red-500 text-xs px-2 py-1 rounded">VB Cable</span>' : ''}
+                                <button onclick="audioCaptureUI.testDevice('${device.deviceId}')" 
+                                        class="bg-blue-600 hover:bg-blue-700 text-xs px-2 py-1 rounded transition-colors">
+                                    Тест
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            async testDevice(deviceId) {
+                this.log(`Тестирование устройства: ${deviceId.substring(0, 20)}...`, 'info');
+                
+                try {
+                    const result = await this.audioCapture.testAudioInput(deviceId);
+                    
+                    if (result.error) {
+                        this.log(`Ошибка тестирования: ${result.error}`, 'error');
+                    } else {
+                        this.log(`Тест устройства: макс. громкость ${result.maxVolume.toFixed(1)}, сигнал: ${result.hasSignal ? 'есть' : 'нет'}`, 
+                                 result.hasSignal ? 'success' : 'warning');
+                    }
+                } catch (error) {
+                    this.log(`Ошибка тестирования устройства: ${error.message}`, 'error');
+                }
+            }
+
+            async testAllDevices() {
+                this.log('Тестирование всех устройств...', 'info');
+                
+                try {
+                    const devices = await this.audioCapture.getAudioDevices();
+                    
+                    for (const device of devices) {
+                        await this.testDevice(device.deviceId);
+                        await new Promise(resolve => setTimeout(resolve, 500)); // Small delay between tests
+                    }
+                    
+                    this.log('Тестирование всех устройств завершено', 'success');
+                } catch (error) {
+                    this.log(`Ошибка тестирования устройств: ${error.message}`, 'error');
+                }
+            }
+
+            async startCapture() {
+                if (this.isCapturing) return;
+                
+                this.log('Запуск захвата аудио...', 'info');
+                
+                try {
+                    await this.audioCapture.startCapture();
+                    this.isCapturing = true;
+                    this.updateCaptureStatus(true);
+                    this.startLevelAnimation();
+                    this.log('Захват аудио запущен', 'success');
+                } catch (error) {
+                    this.log(`Ошибка запуска захвата: ${error.message}`, 'error');
+                }
+            }
+
+            async stopCapture() {
+                if (!this.isCapturing) return;
+                
+                this.log('Остановка захвата аудио...', 'info');
+                
+                try {
+                    this.audioCapture.stopCapture();
+                    this.isCapturing = false;
+                    this.updateCaptureStatus(false);
+                    this.stopLevelAnimation();
+                    this.log('Захват аудио остановлен', 'success');
+                } catch (error) {
+                    this.log(`Ошибка остановки захвата: ${error.message}`, 'error');
+                }
+            }
+
+            updateCaptureStatus(capturing) {
+                this.captureStatus.textContent = capturing ? 'Активен' : 'Остановлен';
+                this.captureStatus.className = capturing ? 'font-medium text-green-400 pulse-animation' : 'font-medium text-gray-400';
+                
+                this.startCaptureBtn.disabled = capturing;
+                this.stopCaptureBtn.disabled = !capturing;
+                
+                // Update stream statuses
+                if (capturing) {
+                    this.p1StreamStatus.textContent = 'Активен';
+                    this.p1StreamStatus.className = 'text-sm text-red-400';
+                    this.p2StreamStatus.textContent = 'Активен';
+                    this.p2StreamStatus.className = 'text-sm text-green-400';
+                } else {
+                    this.p1StreamStatus.textContent = 'Неактивен';
+                    this.p1StreamStatus.className = 'text-sm text-gray-400';
+                    this.p2StreamStatus.textContent = 'Неактивен';
+                    this.p2StreamStatus.className = 'text-sm text-gray-400';
+                }
+            }
+
+            startLevelAnimation() {
+                const animate = () => {
+                    if (!this.isCapturing) return;
+                    
+                    // Simulate audio levels
+                    const p1Level = Math.random() * 60 + 10;
+                    const p2Level = Math.random() * 80 + 5;
+                    
+                    this.p1Level.style.width = `${p1Level}%`;
+                    this.p2Level.style.width = `${p2Level}%`;
+                    
+                    this.levelAnimationId = requestAnimationFrame(animate);
+                };
+                
+                animate();
+            }
+
+            stopLevelAnimation() {
+                if (this.levelAnimationId) {
+                    cancelAnimationFrame(this.levelAnimationId);
+                    this.levelAnimationId = null;
+                }
+                
+                this.p1Level.style.width = '0%';
+                this.p2Level.style.width = '0%';
+            }
+
+            async testAudioChunk(personType) {
+                this.log(`Отправка тестового чанка для ${personType}...`, 'info');
+                
+                try {
+                    await this.audioCapture.sendTestChunk(personType);
+                    this.log(`Тестовый чанк для ${personType} отправлен`, 'success');
+                } catch (error) {
+                    this.log(`Ошибка отправки тестового чанка: ${error.message}`, 'error');
+                }
+            }
+
+            async checkPermissions() {
+                this.log('Проверка разрешений...', 'info');
+                
+                try {
+                    // Check microphone permission
+                    const micPermission = await navigator.permissions.query({ name: 'microphone' });
+                    this.log(`Разрешение микрофона: ${micPermission.state}`, 
+                             micPermission.state === 'granted' ? 'success' : 'warning');
+                    
+                    // Try to get user media to trigger permission if needed
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    stream.getTracks().forEach(track => track.stop());
+                    this.log('Доступ к микрофону получен', 'success');
+                    
+                } catch (error) {
+                    this.log(`Ошибка разрешений: ${error.message}`, 'error');
+                }
+            }
+
+            log(message, type = 'info') {
+                const time = new Date().toLocaleTimeString();
+                const typeColors = {
+                    'info': 'text-blue-300',
+                    'success': 'text-green-300',
+                    'warning': 'text-yellow-300',
+                    'error': 'text-red-300'
+                };
+                
+                const logEntry = document.createElement('div');
+                logEntry.className = `${typeColors[type] || typeColors.info} mb-1`;
+                logEntry.innerHTML = `<span class="text-gray-500">[${time}]</span> ${message}`;
+                
+                this.logContainer.appendChild(logEntry);
+                this.logContainer.scrollTop = this.logContainer.scrollHeight;
+                
+                // Limit log entries
+                const entries = this.logContainer.children;
+                if (entries.length > 100) {
+                    this.logContainer.removeChild(entries[0]);
+                }
+            }
+
+            clearLog() {
+                this.logContainer.innerHTML = '<div class="text-gray-400">Лог очищен</div>';
+            }
+        }
+
+        // Initialize UI
+        let audioCaptureUI;
+        document.addEventListener('DOMContentLoaded', () => {
+            audioCaptureUI = new AudioCaptureUI();
+        });
+    </script>
+</body>
+</html>

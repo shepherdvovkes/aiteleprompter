@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Mixer - Interview Assistant</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .person-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            color: white;
+        }
+        .badge-p1 { background: linear-gradient(135deg, #ff6b6b, #ee5a24); }
+        .badge-p2 { background: linear-gradient(135deg, #4ecdc4, #44bd87); }
+        .audio-visualizer {
+            height: 60px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 10px 0;
+        }
+        .wave-bar {
+            width: 4px;
+            margin: 0 1px;
+            background: currentColor;
+            border-radius: 2px;
+            transition: height 0.1s ease;
+        }
+        .recording-pulse {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .connection-status {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .status-connected { background: #10b981; }
+        .status-disconnected { background: #ef4444; }
+        .status-connecting { background: #f59e0b; animation: pulse 1s infinite; }
+    </style>
+</head>
+<body class="bg-gray-900 text-white">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold mb-2">Audio Mixer</h1>
+            <p class="text-gray-300">Interview Assistant - Dual Channel Audio Management</p>
+        </div>
+
+        <!-- Connection Status -->
+        <div class="glass-effect rounded-lg p-4 mb-6">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center">
+                    <span id="connection-indicator" class="connection-status status-disconnected"></span>
+                    <span id="connection-text">Подключение...</span>
+                </div>
+                <div class="text-sm text-gray-300">
+                    Клиентов подключено: <span id="client-count">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Control Panel -->
+        <div class="glass-effect rounded-lg p-6 mb-6">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-semibold">Управление записью</h2>
+                <div class="flex space-x-4">
+                    <button id="start-recording" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg font-medium transition-colors">
+                        Начать запись
+                    </button>
+                    <button id="stop-recording" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg font-medium transition-colors" disabled>
+                        Остановить запись
+                    </button>
+                </div>
+            </div>
+            <div id="recording-status" class="text-sm text-gray-300">
+                Статус: <span id="recording-text">Остановлено</span>
+            </div>
+        </div>
+
+        <!-- Audio Channels -->
+        <div class="grid md:grid-cols-2 gap-6">
+            <!-- Person 1 (Interviewer) -->
+            <div class="glass-effect rounded-lg p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-semibold">Интервьюер</h3>
+                    <span class="person-badge badge-p1">P1</span>
+                </div>
+                <div class="space-y-3">
+                    <div class="text-sm text-gray-300">
+                        <strong>Источник:</strong> VB Cable (Zoom/Google Meet)
+                    </div>
+                    <div class="text-sm text-gray-300">
+                        <strong>Назначение:</strong> Задает вопросы
+                    </div>
+                    <div class="audio-visualizer text-red-400" id="p1-visualizer">
+                        <div class="flex space-x-1">
+                            <div class="wave-bar" style="height: 20px;"></div>
+                            <div class="wave-bar" style="height: 30px;"></div>
+                            <div class="wave-bar" style="height: 25px;"></div>
+                            <div class="wave-bar" style="height: 40px;"></div>
+                            <div class="wave-bar" style="height: 35px;"></div>
+                            <div class="wave-bar" style="height: 20px;"></div>
+                            <div class="wave-bar" style="height: 30px;"></div>
+                            <div class="wave-bar" style="height: 25px;"></div>
+                        </div>
+                    </div>
+                    <div class="text-sm">
+                        Статус: <span id="p1-status" class="text-gray-400">Ожидание...</span>
+                    </div>
+                    <div class="text-xs text-gray-400">
+                        Последний сигнал: <span id="p1-last-signal">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Person 2 (Interviewee) -->
+            <div class="glass-effect rounded-lg p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-semibold">Собеседник</h3>
+                    <span class="person-badge badge-p2">P2</span>
+                </div>
+                <div class="space-y-3">
+                    <div class="text-sm text-gray-300">
+                        <strong>Источник:</strong> Микрофон
+                    </div>
+                    <div class="text-sm text-gray-300">
+                        <strong>Назначение:</strong> Отвечает на вопросы
+                    </div>
+                    <div class="audio-visualizer text-green-400" id="p2-visualizer">
+                        <div class="flex space-x-1">
+                            <div class="wave-bar" style="height: 15px;"></div>
+                            <div class="wave-bar" style="height: 25px;"></div>
+                            <div class="wave-bar" style="height: 20px;"></div>
+                            <div class="wave-bar" style="height: 35px;"></div>
+                            <div class="wave-bar" style="height: 30px;"></div>
+                            <div class="wave-bar" style="height: 15px;"></div>
+                            <div class="wave-bar" style="height: 25px;"></div>
+                            <div class="wave-bar" style="height: 20px;"></div>
+                        </div>
+                    </div>
+                    <div class="text-sm">
+                        Статус: <span id="p2-status" class="text-gray-400">Ожидание...</span>
+                    </div>
+                    <div class="text-xs text-gray-400">
+                        Последний сигнал: <span id="p2-last-signal">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Audio Log -->
+        <div class="glass-effect rounded-lg p-6 mt-6">
+            <h3 class="text-lg font-semibold mb-4">Лог аудио событий</h3>
+            <div id="audio-log" class="bg-black bg-opacity-30 rounded-lg p-4 h-64 overflow-y-auto font-mono text-sm">
+                <div class="text-gray-400">Ожидание аудио событий...</div>
+            </div>
+        </div>
+
+        <!-- Test Audio Buttons -->
+        <div class="glass-effect rounded-lg p-6 mt-6">
+            <h3 class="text-lg font-semibold mb-4">Тестирование</h3>
+            <div class="flex space-x-4">
+                <button id="test-p1" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg font-medium transition-colors">
+                    Тест P1 (VB Cable)
+                </button>
+                <button id="test-p2" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg font-medium transition-colors">
+                    Тест P2 (Микрофон)
+                </button>
+                <button id="clear-log" class="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded-lg font-medium transition-colors">
+                    Очистить лог
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class AudioMixer {
+            constructor() {
+                this.ws = null;
+                this.isConnected = false;
+                this.isRecording = false;
+                this.reconnectAttempts = 0;
+                this.maxReconnectAttempts = 5;
+                
+                this.initElements();
+                this.connect();
+                this.bindEvents();
+                this.startVisualizerAnimation();
+            }
+
+            initElements() {
+                // Connection elements
+                this.connectionIndicator = document.getElementById('connection-indicator');
+                this.connectionText = document.getElementById('connection-text');
+                this.clientCount = document.getElementById('client-count');
+                
+                // Control elements
+                this.startRecording = document.getElementById('start-recording');
+                this.stopRecording = document.getElementById('stop-recording');
+                this.recordingText = document.getElementById('recording-text');
+                
+                // Status elements
+                this.p1Status = document.getElementById('p1-status');
+                this.p2Status = document.getElementById('p2-status');
+                this.p1LastSignal = document.getElementById('p1-last-signal');
+                this.p2LastSignal = document.getElementById('p2-last-signal');
+                
+                // Log element
+                this.audioLog = document.getElementById('audio-log');
+                
+                // Test buttons
+                this.testP1 = document.getElementById('test-p1');
+                this.testP2 = document.getElementById('test-p2');
+                this.clearLog = document.getElementById('clear-log');
+            }
+
+            connect() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}`;
+                
+                this.updateConnectionStatus('connecting', 'Подключение...');
+                
+                this.ws = new WebSocket(wsUrl);
+                
+                this.ws.onopen = () => {
+                    this.isConnected = true;
+                    this.reconnectAttempts = 0;
+                    this.updateConnectionStatus('connected', 'Подключено');
+                    this.log('Подключение к серверу установлено', 'system');
+                    
+                    // Set person type for this client
+                    this.send({ type: 'set-person', person: 'mixer' });
+                };
+                
+                this.ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        this.handleMessage(data);
+                    } catch (err) {
+                        console.error('Error parsing message:', err);
+                    }
+                };
+                
+                this.ws.onclose = () => {
+                    this.isConnected = false;
+                    this.updateConnectionStatus('disconnected', 'Отключено');
+                    this.log('Соединение разорвано', 'error');
+                    this.attemptReconnect();
+                };
+                
+                this.ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    this.log('Ошибка соединения', 'error');
+                };
+            }
+
+            attemptReconnect() {
+                if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                    this.reconnectAttempts++;
+                    this.updateConnectionStatus('connecting', `Переподключение... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+                    setTimeout(() => this.connect(), 2000 * this.reconnectAttempts);
+                } else {
+                    this.updateConnectionStatus('disconnected', 'Не удалось подключиться');
+                }
+            }
+
+            send(data) {
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(JSON.stringify(data));
+                }
+            }
+
+            handleMessage(data) {
+                switch (data.type) {
+                    case 'audio-processed':
+                        this.handleAudioProcessed(data);
+                        break;
+                    case 'recording-started':
+                        this.updateRecordingStatus(true);
+                        break;
+                    case 'recording-stopped':
+                        this.updateRecordingStatus(false);
+                        break;
+                }
+            }
+
+            handleAudioProcessed(data) {
+                const { person, timestamp, source } = data;
+                const time = new Date(timestamp).toLocaleTimeString();
+                
+                if (person === 'P1') {
+                    this.p1Status.textContent = 'Активен';
+                    this.p1Status.className = 'text-red-400';
+                    this.p1LastSignal.textContent = time;
+                    this.animateVisualizer('p1-visualizer');
+                } else if (person === 'P2') {
+                    this.p2Status.textContent = 'Активен';
+                    this.p2Status.className = 'text-green-400';
+                    this.p2LastSignal.textContent = time;
+                    this.animateVisualizer('p2-visualizer');
+                }
+                
+                this.log(`${person}: Получен аудио сигнал из ${source}`, person.toLowerCase());
+                
+                // Reset status after 3 seconds
+                setTimeout(() => {
+                    if (person === 'P1') {
+                        this.p1Status.textContent = 'Ожидание...';
+                        this.p1Status.className = 'text-gray-400';
+                    } else if (person === 'P2') {
+                        this.p2Status.textContent = 'Ожидание...';
+                        this.p2Status.className = 'text-gray-400';
+                    }
+                }, 3000);
+            }
+
+            updateConnectionStatus(status, text) {
+                this.connectionIndicator.className = `connection-status status-${status}`;
+                this.connectionText.textContent = text;
+            }
+
+            updateRecordingStatus(recording) {
+                this.isRecording = recording;
+                this.startRecording.disabled = recording;
+                this.stopRecording.disabled = !recording;
+                
+                if (recording) {
+                    this.recordingText.textContent = 'Запись активна';
+                    this.recordingText.className = 'text-red-400 recording-pulse';
+                } else {
+                    this.recordingText.textContent = 'Остановлено';
+                    this.recordingText.className = 'text-gray-400';
+                }
+            }
+
+            animateVisualizer(visualizerId) {
+                const visualizer = document.getElementById(visualizerId);
+                const bars = visualizer.querySelectorAll('.wave-bar');
+                
+                bars.forEach(bar => {
+                    const height = Math.random() * 40 + 10;
+                    bar.style.height = `${height}px`;
+                });
+                
+                // Reset after animation
+                setTimeout(() => {
+                    bars.forEach(bar => {
+                        bar.style.height = `${Math.random() * 20 + 10}px`;
+                    });
+                }, 500);
+            }
+
+            startVisualizerAnimation() {
+                setInterval(() => {
+                    if (!this.isRecording) return;
+                    
+                    // Animate visualizers with random data when recording
+                    const p1Bars = document.querySelectorAll('#p1-visualizer .wave-bar');
+                    const p2Bars = document.querySelectorAll('#p2-visualizer .wave-bar');
+                    
+                    p1Bars.forEach(bar => {
+                        bar.style.height = `${Math.random() * 15 + 5}px`;
+                    });
+                    
+                    p2Bars.forEach(bar => {
+                        bar.style.height = `${Math.random() * 15 + 5}px`;
+                    });
+                }, 100);
+            }
+
+            bindEvents() {
+                this.startRecording.addEventListener('click', () => {
+                    this.send({ type: 'start-recording' });
+                });
+                
+                this.stopRecording.addEventListener('click', () => {
+                    this.send({ type: 'stop-recording' });
+                });
+                
+                this.testP1.addEventListener('click', () => {
+                    this.simulateAudioChunk('P1');
+                });
+                
+                this.testP2.addEventListener('click', () => {
+                    this.simulateAudioChunk('P2');
+                });
+                
+                this.clearLog.addEventListener('click', () => {
+                    this.audioLog.innerHTML = '<div class="text-gray-400">Лог очищен</div>';
+                });
+            }
+
+            simulateAudioChunk(person) {
+                const testData = {
+                    type: 'audio-chunk',
+                    person: person,
+                    audioData: 'dGVzdCBhdWRpbyBkYXRh', // base64 "test audio data"
+                    timestamp: Date.now()
+                };
+                
+                this.send(testData);
+                this.log(`Отправлен тестовый сигнал для ${person}`, 'test');
+            }
+
+            log(message, type = 'info') {
+                const time = new Date().toLocaleTimeString();
+                const typeColor = {
+                    'system': 'text-blue-400',
+                    'error': 'text-red-400',
+                    'p1': 'text-red-300',
+                    'p2': 'text-green-300',
+                    'test': 'text-yellow-400',
+                    'info': 'text-gray-300'
+                };
+                
+                const logEntry = document.createElement('div');
+                logEntry.className = `${typeColor[type] || typeColor.info} mb-1`;
+                logEntry.innerHTML = `<span class="text-gray-500">[${time}]</span> ${message}`;
+                
+                this.audioLog.appendChild(logEntry);
+                this.audioLog.scrollTop = this.audioLog.scrollHeight;
+                
+                // Limit log entries
+                const entries = this.audioLog.children;
+                if (entries.length > 100) {
+                    this.audioLog.removeChild(entries[0]);
+                }
+            }
+
+            // Fetch status periodically
+            async fetchStatus() {
+                try {
+                    const response = await fetch('/api/audio/status');
+                    const status = await response.json();
+                    this.clientCount.textContent = status.connectedClients;
+                    
+                    if (status.isRecording !== this.isRecording) {
+                        this.updateRecordingStatus(status.isRecording);
+                    }
+                } catch (err) {
+                    console.error('Error fetching status:', err);
+                }
+            }
+        }
+
+        // Initialize audio mixer when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            const mixer = new AudioMixer();
+            
+            // Fetch status every 5 seconds
+            setInterval(() => mixer.fetchStatus(), 5000);
+        });
+    </script>
+</body>
+</html>
