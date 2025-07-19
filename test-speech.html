@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест распознавания речи</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        button.stop {
+            background: #f44336;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .status.success { background: #4CAF50; }
+        .status.error { background: #f44336; }
+        .status.warning { background: #ff9800; }
+        .status.info { background: #2196F3; }
+        .transcript {
+            background: #333;
+            padding: 15px;
+            border-radius: 5px;
+            min-height: 100px;
+            margin: 10px 0;
+        }
+        .interim {
+            color: #ccc;
+            font-style: italic;
+        }
+        .final {
+            color: white;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+        .log {
+            background: #000;
+            color: #0f0;
+            padding: 10px;
+            border-radius: 5px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎤 Тест распознавания речи</h1>
+    
+    <div class="container">
+        <h2>Статус браузера</h2>
+        <div id="browser-support"></div>
+    </div>
+
+    <div class="container">
+        <h2>Управление</h2>
+        <button id="start-btn">🎤 Начать</button>
+        <button id="stop-btn" class="stop" disabled>⏹️ Остановить</button>
+        <br>
+        <label for="language">Язык:</label>
+        <select id="language">
+            <option value="ru-RU">Русский</option>
+            <option value="en-US">English</option>
+            <option value="">Авто</option>
+        </select>
+        
+        <div id="status" class="status info">Готов к тестированию</div>
+    </div>
+
+    <div class="container">
+        <h2>Транскрипция</h2>
+        <div class="transcript">
+            <div id="interim-text" class="interim">Промежуточный текст появится здесь...</div>
+            <div id="final-text"></div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>Лог событий</h2>
+        <div id="log" class="log"></div>
+        <button onclick="clearLog()">Очистить лог</button>
+    </div>
+
+    <script>
+        let recognition = null;
+        let isListening = false;
+        
+        // Elements
+        const startBtn = document.getElementById('start-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const languageSelect = document.getElementById('language');
+        const statusDiv = document.getElementById('status');
+        const interimDiv = document.getElementById('interim-text');
+        const finalDiv = document.getElementById('final-text');
+        const logDiv = document.getElementById('log');
+        const browserSupportDiv = document.getElementById('browser-support');
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            logDiv.appendChild(logEntry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+
+        function setStatus(message, type = 'info') {
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+            log(`STATUS: ${message}`, type);
+        }
+
+        function clearLog() {
+            logDiv.innerHTML = '';
+        }
+
+        function checkBrowserSupport() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            
+            let supportInfo = '<div>';
+            
+            if (SpeechRecognition) {
+                supportInfo += '<div class="status success">✅ Speech Recognition API поддерживается</div>';
+                log('Browser supports Speech Recognition API');
+            } else {
+                supportInfo += '<div class="status error">❌ Speech Recognition API НЕ поддерживается</div>';
+                log('Browser does NOT support Speech Recognition API', 'error');
+            }
+
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                supportInfo += '<div class="status success">✅ MediaDevices API поддерживается</div>';
+                log('Browser supports MediaDevices API');
+            } else {
+                supportInfo += '<div class="status error">❌ MediaDevices API НЕ поддерживается</div>';
+                log('Browser does NOT support MediaDevices API', 'error');
+            }
+
+            if (navigator.permissions) {
+                supportInfo += '<div class="status success">✅ Permissions API поддерживается</div>';
+                log('Browser supports Permissions API');
+            } else {
+                supportInfo += '<div class="status warning">⚠️ Permissions API НЕ поддерживается</div>';
+                log('Browser does NOT support Permissions API', 'warning');
+            }
+
+            supportInfo += `<div class="status info">🌐 User Agent: ${navigator.userAgent}</div>`;
+            supportInfo += `<div class="status info">🔒 Protocol: ${location.protocol}</div>`;
+            supportInfo += '</div>';
+
+            browserSupportDiv.innerHTML = supportInfo;
+        }
+
+        function initializeRecognition() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            
+            if (!SpeechRecognition) {
+                setStatus('Speech Recognition не поддерживается в этом браузере', 'error');
+                return false;
+            }
+
+            try {
+                recognition = new SpeechRecognition();
+                recognition.continuous = true;
+                recognition.interimResults = true;
+                recognition.maxAlternatives = 1;
+                
+                // Event handlers
+                recognition.onstart = () => {
+                    log('Recognition started');
+                    setStatus('Слушаю...', 'success');
+                    isListening = true;
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                };
+
+                recognition.onend = () => {
+                    log('Recognition ended');
+                    setStatus('Остановлено', 'info');
+                    isListening = false;
+                    startBtn.disabled = false;
+                    stopBtn.disabled = true;
+                };
+
+                recognition.onerror = (event) => {
+                    log(`Recognition error: ${event.error}`, 'error');
+                    setStatus(`Ошибка: ${event.error}`, 'error');
+                };
+
+                recognition.onresult = (event) => {
+                    let interimTranscript = '';
+                    let finalTranscript = '';
+
+                    for (let i = event.resultIndex; i < event.results.length; i++) {
+                        const result = event.results[i];
+                        const transcript = result[0].transcript;
+                        
+                        log(`Result ${i}: isFinal=${result.isFinal}, confidence=${result[0].confidence?.toFixed(3) || 'N/A'}, text="${transcript}"`);
+                        
+                        if (result.isFinal) {
+                            finalTranscript += transcript;
+                        } else {
+                            interimTranscript += transcript;
+                        }
+                    }
+
+                    if (interimTranscript) {
+                        interimDiv.textContent = interimTranscript;
+                    }
+
+                    if (finalTranscript) {
+                        const finalEntry = document.createElement('div');
+                        finalEntry.className = 'final';
+                        finalEntry.textContent = finalTranscript;
+                        finalDiv.appendChild(finalEntry);
+                        interimDiv.textContent = 'Промежуточный текст появится здесь...';
+                        log(`FINAL: ${finalTranscript}`);
+                    }
+                };
+
+                recognition.onsoundstart = () => log('Sound detected');
+                recognition.onsoundend = () => log('Sound ended');
+                recognition.onspeechstart = () => log('Speech started');
+                recognition.onspeechend = () => log('Speech ended');
+                recognition.onnomatch = () => log('No match found');
+
+                log('Speech Recognition initialized successfully');
+                return true;
+            } catch (error) {
+                log(`Failed to initialize recognition: ${error.message}`, 'error');
+                setStatus(`Ошибка инициализации: ${error.message}`, 'error');
+                return false;
+            }
+        }
+
+        async function checkMicrophonePermission() {
+            if (!navigator.permissions) {
+                log('Permissions API not available, skipping permission check', 'warning');
+                return;
+            }
+
+            try {
+                const permission = await navigator.permissions.query({ name: 'microphone' });
+                log(`Microphone permission: ${permission.state}`);
+                
+                if (permission.state === 'denied') {
+                    setStatus('Доступ к микрофону запрещен', 'error');
+                }
+            } catch (error) {
+                log(`Permission check failed: ${error.message}`, 'warning');
+            }
+        }
+
+        function startRecognition() {
+            if (!recognition) {
+                setStatus('Recognition не инициализирован', 'error');
+                return;
+            }
+
+            if (isListening) {
+                log('Already listening, ignoring start request', 'warning');
+                return;
+            }
+
+            try {
+                const language = languageSelect.value;
+                recognition.lang = language;
+                log(`Starting recognition with language: ${language || 'auto'}`);
+                
+                recognition.start();
+            } catch (error) {
+                log(`Failed to start recognition: ${error.message}`, 'error');
+                setStatus(`Не удалось запустить: ${error.message}`, 'error');
+            }
+        }
+
+        function stopRecognition() {
+            if (!recognition || !isListening) {
+                return;
+            }
+
+            try {
+                log('Stopping recognition');
+                recognition.stop();
+            } catch (error) {
+                log(`Failed to stop recognition: ${error.message}`, 'error');
+            }
+        }
+
+        // Event listeners
+        startBtn.addEventListener('click', startRecognition);
+        stopBtn.addEventListener('click', stopRecognition);
+
+        // Initialize on page load
+        window.addEventListener('load', () => {
+            log('Page loaded, initializing...');
+            checkBrowserSupport();
+            checkMicrophonePermission();
+            initializeRecognition();
+        });
+    </script>
+</body>
+</html>

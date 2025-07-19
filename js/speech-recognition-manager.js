@@ -45,26 +45,33 @@ class SpeechRecognitionManager {
         
         if (!SpeechRecognition) {
             console.error('Speech Recognition not supported in this browser');
+            this.onStatusChange?.('error', 'Speech Recognition не поддерживается в этом браузере');
             return false;
         }
 
-        this.recognition = new SpeechRecognition();
-        this.recognition.continuous = true;
-        this.recognition.interimResults = true;
-        
-        this.setupEventHandlers();
-        console.log('Speech Recognition initialized');
-        return true;
+        try {
+            this.recognition = new SpeechRecognition();
+            this.recognition.continuous = true;
+            this.recognition.interimResults = true;
+            this.recognition.maxAlternatives = 1;
+            this.recognition.lang = 'ru-RU'; // Default language
+            
+            this.setupEventHandlers();
+            console.log('Speech Recognition initialized successfully');
+            return true;
+        } catch (error) {
+            console.error('Failed to initialize Speech Recognition:', error);
+            this.onStatusChange?.('error', 'Ошибка инициализации распознавания речи: ' + error.message);
+            return false;
+        }
     }
 
     setupEventHandlers() {
         if (!this.recognition) return;
 
         this.recognition.onstart = () => {
-            if (!this.isListening) return; // ignore spurious starts
-            
-            console.log('Speech Recognition started');
-            this.onStatusChange?.('listening', 'Listening...');
+            console.log('Speech Recognition started successfully');
+            this.onStatusChange?.('listening', 'Слушаю...');
             
             if (!this.hasStartedBefore) {
                 this.resetTranscription();
@@ -95,30 +102,86 @@ class SpeechRecognitionManager {
         };
 
         this.recognition.onerror = (event) => {
-            console.error('Speech recognition error:', event.error);
+            console.error('Speech recognition error:', event.error, event);
             
-            // Handle different types of errors
-            if (event.error === 'network') {
-                this.onStatusChange?.('error', 'Network error - will retry');
-                if (this.continuousMode && this.reconnectAttempts < this.maxReconnectAttempts) {
-                    setTimeout(() => this.attemptRestart(), this.RECONNECT_DELAY * (this.reconnectAttempts + 1));
-                }
-            } else if (event.error === 'not-allowed') {
-                this.onStatusChange?.('error', 'Microphone access denied');
-                this.continuousMode = false;
-            } else if (event.error === 'aborted') {
-                // This is normal during restart, don't show as error
-                console.log('Recognition aborted (normal during restart)');
-            } else {
-                this.onStatusChange?.('error', `Error: ${event.error}`);
-                if (this.continuousMode && this.reconnectAttempts < this.maxReconnectAttempts) {
-                    setTimeout(() => this.attemptRestart(), this.RECONNECT_DELAY);
-                }
+            // Handle different types of errors with better user feedback
+            switch (event.error) {
+                case 'network':
+                    this.onStatusChange?.('error', 'Сетевая ошибка - попробую снова');
+                    if (this.continuousMode && this.reconnectAttempts < this.maxReconnectAttempts) {
+                        setTimeout(() => this.attemptRestart(), this.RECONNECT_DELAY * (this.reconnectAttempts + 1));
+                    }
+                    break;
+                    
+                case 'not-allowed':
+                    this.onStatusChange?.('error', 'Доступ к микрофону запрещен. Разрешите доступ к микрофону в настройках браузера.');
+                    this.continuousMode = false;
+                    break;
+                    
+                case 'service-not-allowed':
+                    this.onStatusChange?.('error', 'Сервис распознавания речи недоступен. Попробуйте перезагрузить страницу.');
+                    break;
+                    
+                case 'bad-grammar':
+                    this.onStatusChange?.('error', 'Ошибка грамматики распознавания');
+                    break;
+                    
+                case 'language-not-supported':
+                    this.onStatusChange?.('error', 'Выбранный язык не поддерживается. Переключаюсь на автоопределение.');
+                    if (this.recognition) {
+                        this.recognition.lang = '';
+                    }
+                    break;
+                    
+                case 'no-speech':
+                    console.log('No speech detected, this is normal');
+                    // Don't show error for no-speech, it's normal
+                    if (this.continuousMode && this.isListening) {
+                        this.attemptRestart();
+                    }
+                    break;
+                    
+                case 'audio-capture':
+                    this.onStatusChange?.('error', 'Ошибка захвата аудио. Проверьте подключение микрофона.');
+                    break;
+                    
+                case 'aborted':
+                    // This is normal during restart, don't show as error
+                    console.log('Recognition aborted (normal during restart)');
+                    break;
+                    
+                default:
+                    this.onStatusChange?.('error', `Ошибка распознавания: ${event.error}`);
+                    if (this.continuousMode && this.reconnectAttempts < this.maxReconnectAttempts) {
+                        setTimeout(() => this.attemptRestart(), this.RECONNECT_DELAY);
+                    }
             }
         };
 
         this.recognition.onresult = (event) => {
+            console.log('Speech recognition result received:', event.results.length, 'results');
             this.handleRecognitionResult(event);
+        };
+
+        this.recognition.onnomatch = () => {
+            console.log('Speech recognition: no match found');
+            this.onStatusChange?.('listening', 'Не удалось распознать речь, продолжаю слушать...');
+        };
+
+        this.recognition.onsoundstart = () => {
+            console.log('Sound detected');
+        };
+
+        this.recognition.onsoundend = () => {
+            console.log('Sound ended');
+        };
+
+        this.recognition.onspeechstart = () => {
+            console.log('Speech started');
+        };
+
+        this.recognition.onspeechend = () => {
+            console.log('Speech ended');
         };
     }
 
@@ -130,12 +193,17 @@ class SpeechRecognitionManager {
         }, this.SILENCE_THRESHOLD);
 
         let interimTranscript = '';
+        let finalTranscript = '';
         
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-            const transcriptPart = event.results[i][0].transcript;
+            const result = event.results[i];
+            const transcriptPart = result[0].transcript;
             
-            if (event.results[i].isFinal) {
+            console.log(`Result ${i}: isFinal=${result.isFinal}, confidence=${result[0].confidence}, text="${transcriptPart}"`);
+            
+            if (result.isFinal) {
                 if (transcriptPart.trim()) {
+                    finalTranscript += transcriptPart.trim();
                     this.partialSentence += (this.partialSentence ? ' ' : '') + transcriptPart.trim();
                     
                     if (/[.!?]\s*$/.test(this.partialSentence)) {
@@ -159,11 +227,29 @@ class SpeechRecognitionManager {
         
         this.interimText = interimTranscript;
         this.updateInterimDisplay();
+        
+        if (finalTranscript) {
+            console.log('Final transcript received:', finalTranscript);
+        }
+        if (interimTranscript) {
+            console.log('Interim transcript:', interimTranscript);
+        }
     }
 
     async startListening(language = 'ru-RU', continuous = true) {
-        if (this.isListening || !this.recognition) return false;
+        if (this.isListening) {
+            console.log('Already listening, ignoring start request');
+            return false;
+        }
+        
+        if (!this.recognition) {
+            console.error('Speech recognition not initialized');
+            this.onStatusChange?.('error', 'Распознавание речи не инициализировано');
+            return false;
+        }
 
+        console.log('Starting speech recognition with language:', language, 'continuous:', continuous);
+        
         this.recognition.lang = language;
         this.continuousMode = continuous;
         this.reconnectAttempts = 0;
@@ -174,13 +260,31 @@ class SpeechRecognitionManager {
             
             this.isListening = true;
             this.hasStartedBefore = false;
+            
+            // Check microphone permissions first
+            if (navigator.permissions) {
+                try {
+                    const permission = await navigator.permissions.query({ name: 'microphone' });
+                    console.log('Microphone permission status:', permission.state);
+                    
+                    if (permission.state === 'denied') {
+                        this.onStatusChange?.('error', 'Доступ к микрофону запрещен. Разрешите доступ в настройках браузера.');
+                        this.isListening = false;
+                        return false;
+                    }
+                } catch (permError) {
+                    console.log('Could not check microphone permissions:', permError);
+                }
+            }
+            
             this.recognition.start();
             
-            console.log('Started listening with language:', language, 'continuous:', continuous);
+            console.log('Speech recognition start command sent');
             return true;
         } catch (error) {
             console.error('Failed to start listening:', error);
-            this.onStatusChange?.('error', 'Failed to start listening');
+            this.onStatusChange?.('error', 'Не удалось запустить прослушивание: ' + error.message);
+            this.isListening = false;
             return false;
         }
     }

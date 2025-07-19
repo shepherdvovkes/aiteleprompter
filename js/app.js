@@ -101,26 +101,62 @@ class App {
             try {
                 console.log('Auto-starting listening with default behavior');
                 
+                // Check browser support first
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SpeechRecognition) {
+                    console.error('Speech Recognition API not supported');
+                    this.uiManager.showToast(
+                        'Ваш браузер не поддерживает распознавание речи. Попробуйте Chrome, Edge или Safari.', 
+                        'error', 
+                        10000
+                    );
+                    return;
+                }
+                
+                // Check microphone access
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    console.error('MediaDevices API not supported');
+                    this.uiManager.showToast(
+                        'Ваш браузер не поддерживает доступ к микрофону.', 
+                        'error', 
+                        5000
+                    );
+                    return;
+                }
+                
                 // Check if API key is configured
                 if (!this.aiService.apiKey) {
                     console.log('No API key configured, showing settings');
                     this.showSettings();
+                    this.uiManager.showToast(
+                        'Необходимо настроить API ключ OpenAI для работы с AI ответами.', 
+                        'warning', 
+                        5000
+                    );
                     return;
                 }
                 
                 // Auto-start listening
-                await this.handleStart();
+                const success = await this.handleStart();
                 
-                // Show info about default behavior
-                this.uiManager.showToast(
-                    'Приложение запущено! Слушает P1 (VB Cable) для вопросов и P2 (микрофон) для ответов.', 
-                    'info', 
-                    5000
-                );
+                if (success) {
+                    // Show info about default behavior
+                    this.uiManager.showToast(
+                        'Приложение запущено! Слушает P1 (VB Cable) для вопросов и P2 (микрофон) для ответов.', 
+                        'info', 
+                        5000
+                    );
+                } else {
+                    this.uiManager.showToast(
+                        'Не удалось запустить прослушивание. Проверьте разрешения микрофона.', 
+                        'error', 
+                        5000
+                    );
+                }
                 
             } catch (error) {
                 console.error('Auto-start failed:', error);
-                this.uiManager.showToast('Не удалось автоматически запустить прослушивание', 'error', 3000);
+                this.uiManager.showToast('Не удалось автоматически запустить прослушивание: ' + error.message, 'error', 5000);
             }
         }, 1000);
     }
@@ -238,41 +274,62 @@ class App {
     }
 
     async handleStart() {
-        if (this.speechManager.isListening) return;
+        if (this.speechManager.isListening) {
+            console.log('Already listening, ignoring start request');
+            return true;
+        }
 
         try {
+            console.log('Starting application...');
+            
             // Mark session start time
             if (!this.sessionStartTime) {
                 this.sessionStartTime = Date.now();
             }
             
             // Update UI to show connecting state
-            this.updateStatus('connecting', 'Connecting to API...');
+            this.updateStatus('connecting', 'Подключение к API...');
             
-            // Test API connection first
-            await this.aiService.testConnection();
-            this.updateStatus('connected', 'Connected to API');
+            // Test API connection first if API key is set
+            if (this.aiService.apiKey) {
+                try {
+                    await this.aiService.testConnection();
+                    this.updateStatus('connected', 'Подключен к API');
+                } catch (apiError) {
+                    console.warn('API connection failed, but continuing with speech recognition:', apiError);
+                    this.updateStatus('connected', 'API недоступен, но распознавание речи работает');
+                }
+            } else {
+                this.updateStatus('connected', 'API ключ не настроен, но распознавание речи работает');
+            }
             
             // Get selected language
             const selectedLang = this.languageSelect.value;
             const language = selectedLang === 'auto' ? 'ru-RU' : selectedLang;
             
+            console.log('Starting speech recognition with language:', language);
+            
             // Start speech recognition in continuous mode
             const success = await this.speechManager.startListening(language, true);
             
             if (success) {
+                console.log('Speech recognition started successfully');
                 this.updateButtonStates(true);
                 this.clearDisplays();
                 
                 // Show continuous mode indicator
                 this.showContinuousModeIndicator();
+                return true;
             } else {
-                this.updateStatus('error', 'Failed to start listening');
+                console.error('Failed to start speech recognition');
+                this.updateStatus('error', 'Не удалось запустить распознавание речи');
+                return false;
             }
             
         } catch (error) {
             console.error('Failed to start:', error);
-            this.updateStatus('error', 'API connection failed');
+            this.updateStatus('error', 'Ошибка запуска: ' + error.message);
+            return false;
         }
     }
 
