@@ -392,9 +392,10 @@
                 const animate = () => {
                     if (!this.isCapturing) return;
                     
-                    // Simulate audio levels
-                    const p1Level = Math.random() * 60 + 10;
-                    const p2Level = Math.random() * 80 + 5;
+                    // Get real audio levels from AudioCapture
+                    const levels = this.audioCapture.getAudioLevels();
+                    const p1Level = levels.p1 || 0;
+                    const p2Level = levels.p2 || 0;
                     
                     this.p1Level.style.width = `${p1Level}%`;
                     this.p2Level.style.width = `${p2Level}%`;

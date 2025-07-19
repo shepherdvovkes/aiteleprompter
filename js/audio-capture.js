@@ -17,6 +17,13 @@ class AudioCapture {
         this.chunkDuration = 1000; // 1 second chunks
         this.sampleRate = 44100;
         
+        // Audio level analysis
+        this.p1Analyser = null;
+        this.p2Analyser = null;
+        this.p1DataArray = null;
+        this.p2DataArray = null;
+        this.currentLevels = { p1: 0, p2: 0 };
+        
         this.initializeWebSocket();
     }
 
@@ -133,6 +140,9 @@ class AudioCapture {
             mimeType: 'audio/webm;codecs=opus'
         });
 
+        // Setup audio analysis for level meters
+        this.setupAudioAnalysis(stream, personType);
+
         const chunks = [];
 
         mediaRecorder.ondataavailable = (event) => {
@@ -222,6 +232,18 @@ class AudioCapture {
         if (this.vbCableStream) {
             this.vbCableStream.getTracks().forEach(track => track.stop());
             this.vbCableStream = null;
+        }
+
+        // Cleanup audio analysis
+        this.p1Analyser = null;
+        this.p2Analyser = null;
+        this.p1DataArray = null;
+        this.p2DataArray = null;
+        this.currentLevels = { p1: 0, p2: 0 };
+
+        if (this.audioContext && this.audioContext.state !== 'closed') {
+            this.audioContext.close();
+            this.audioContext = null;
         }
 
         console.log('Audio capture stopped');
@@ -318,6 +340,63 @@ class AudioCapture {
         } catch (error) {
             console.error(`Error sending test chunk for ${personType}:`, error);
         }
+    }
+
+    setupAudioAnalysis(stream, personType) {
+        try {
+            if (!this.audioContext) {
+                this.audioContext = new AudioContext();
+            }
+
+            const source = this.audioContext.createMediaStreamSource(stream);
+            const analyser = this.audioContext.createAnalyser();
+            
+            analyser.fftSize = 2048;
+            analyser.smoothingTimeConstant = 0.8;
+            source.connect(analyser);
+
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+            if (personType === 'P1') {
+                this.p1Analyser = analyser;
+                this.p1DataArray = dataArray;
+            } else {
+                this.p2Analyser = analyser;
+                this.p2DataArray = dataArray;
+            }
+
+            console.log(`Audio analysis setup for ${personType}`);
+        } catch (error) {
+            console.error(`Failed to setup audio analysis for ${personType}:`, error);
+        }
+    }
+
+    getAudioLevels() {
+        // Calculate P1 level using time domain data for better responsiveness
+        if (this.p1Analyser && this.p1DataArray) {
+            this.p1Analyser.getByteTimeDomainData(this.p1DataArray);
+            let p1Sum = 0;
+            for (let i = 0; i < this.p1DataArray.length; i++) {
+                const sample = (this.p1DataArray[i] - 128) / 128;
+                p1Sum += sample * sample;
+            }
+            const rms = Math.sqrt(p1Sum / this.p1DataArray.length);
+            this.currentLevels.p1 = Math.min(100, rms * 200); // Scale for visibility
+        }
+
+        // Calculate P2 level using time domain data for better responsiveness
+        if (this.p2Analyser && this.p2DataArray) {
+            this.p2Analyser.getByteTimeDomainData(this.p2DataArray);
+            let p2Sum = 0;
+            for (let i = 0; i < this.p2DataArray.length; i++) {
+                const sample = (this.p2DataArray[i] - 128) / 128;
+                p2Sum += sample * sample;
+            }
+            const rms = Math.sqrt(p2Sum / this.p2DataArray.length);
+            this.currentLevels.p2 = Math.min(100, rms * 200); // Scale for visibility
+        }
+
+        return this.currentLevels;
     }
 }
 
