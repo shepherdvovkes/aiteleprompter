@@ -1,5 +1,9 @@
 const express = require('express');
+const http = require('http');
+const WebSocket = require('ws');
 const path = require('path');
+const multer = require('multer');
+const cors = require('cors');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 let fetchFn = global.fetch;
@@ -8,15 +12,118 @@ if (typeof fetchFn !== 'function') {
 }
 
 const app = express();
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
 const PORT = process.env.PORT || 3000;
+
+// Audio mixer state
+const audioMixer = {
+  person1Stream: null, // Interviewer (VB Cable)
+  person2Stream: null, // Interviewee (Microphone)
+  clients: new Set(),
+  isRecording: false
+};
 
 // In-memory cache for frequent requests
 const cache = new Map();
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
+// Configure multer for audio uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  }
+});
+
 // Middleware
+app.use(cors());
 app.use(express.static(path.join(__dirname)));
 app.use(express.json({ limit: '10mb' }));
+
+// WebSocket connection handling
+wss.on('connection', (ws) => {
+  console.log('Client connected to audio mixer');
+  audioMixer.clients.add(ws);
+  
+  ws.on('message', (message) => {
+    try {
+      const data = JSON.parse(message);
+      handleAudioMessage(ws, data);
+    } catch (err) {
+      console.error('Invalid message format:', err);
+    }
+  });
+  
+  ws.on('close', () => {
+    console.log('Client disconnected from audio mixer');
+    audioMixer.clients.delete(ws);
+  });
+});
+
+// Audio message handler
+function handleAudioMessage(ws, data) {
+  switch (data.type) {
+    case 'audio-chunk':
+      processAudioChunk(data);
+      break;
+    case 'start-recording':
+      startAudioRecording();
+      break;
+    case 'stop-recording':
+      stopAudioRecording();
+      break;
+    case 'set-person':
+      setPersonType(ws, data.person);
+      break;
+  }
+}
+
+// Process audio chunks from different sources
+function processAudioChunk(data) {
+  const { person, audioData, timestamp } = data;
+  
+  // Broadcast to all connected clients with person identification
+  const message = {
+    type: 'audio-processed',
+    person: person, // 'P1' or 'P2'
+    audioData: audioData,
+    timestamp: timestamp,
+    source: person === 'P1' ? 'VB Cable (Interviewer)' : 'Microphone (Interviewee)'
+  };
+  
+  broadcastToClients(message);
+}
+
+// Broadcast message to all connected clients
+function broadcastToClients(message) {
+  const messageStr = JSON.stringify(message);
+  audioMixer.clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(messageStr);
+    }
+  });
+}
+
+// Start audio recording
+function startAudioRecording() {
+  audioMixer.isRecording = true;
+  console.log('Audio recording started');
+  broadcastToClients({ type: 'recording-started' });
+}
+
+// Stop audio recording
+function stopAudioRecording() {
+  audioMixer.isRecording = false;
+  console.log('Audio recording stopped');
+  broadcastToClients({ type: 'recording-stopped' });
+}
+
+// Set person type for WebSocket connection
+function setPersonType(ws, person) {
+  ws.personType = person;
+  console.log(`Client set as ${person}`);
+}
 
 // Cache helper functions
 function getCacheKey(body) {
@@ -156,10 +263,104 @@ app.post('/api/clear-cache', (req, res) => {
   res.json({ message: 'Cache cleared successfully' });
 });
 
+// Audio mixer API endpoints
+
+// Get audio mixer status
+app.get('/api/audio/status', (req, res) => {
+  res.json({
+    isRecording: audioMixer.isRecording,
+    connectedClients: audioMixer.clients.size,
+    person1Active: audioMixer.person1Stream !== null,
+    person2Active: audioMixer.person2Stream !== null
+  });
+});
+
+// Start audio recording
+app.post('/api/audio/start', (req, res) => {
+  startAudioRecording();
+  res.json({ message: 'Audio recording started', isRecording: true });
+});
+
+// Stop audio recording
+app.post('/api/audio/stop', (req, res) => {
+  stopAudioRecording();
+  res.json({ message: 'Audio recording stopped', isRecording: false });
+});
+
+// Upload audio chunk from VB Cable (Person 1 - Interviewer)
+app.post('/api/audio/upload/p1', upload.single('audio'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No audio file provided' });
+  }
+  
+  const audioData = req.file.buffer.toString('base64');
+  const timestamp = Date.now();
+  
+  processAudioChunk({
+    person: 'P1',
+    audioData: audioData,
+    timestamp: timestamp
+  });
+  
+  res.json({ 
+    message: 'P1 audio processed', 
+    person: 'P1',
+    size: req.file.size,
+    timestamp: timestamp
+  });
+});
+
+// Upload audio chunk from Microphone (Person 2 - Interviewee)
+app.post('/api/audio/upload/p2', upload.single('audio'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No audio file provided' });
+  }
+  
+  const audioData = req.file.buffer.toString('base64');
+  const timestamp = Date.now();
+  
+  processAudioChunk({
+    person: 'P2',
+    audioData: audioData,
+    timestamp: timestamp
+  });
+  
+  res.json({ 
+    message: 'P2 audio processed', 
+    person: 'P2',
+    size: req.file.size,
+    timestamp: timestamp
+  });
+});
+
+// Get audio mixer configuration
+app.get('/api/audio/config', (req, res) => {
+  res.json({
+    person1: {
+      name: 'P1 (Interviewer)', 
+      source: 'VB Cable',
+      description: 'Audio from Zoom/Google Meet via VB Cable',
+      badge: 'P1'
+    },
+    person2: {
+      name: 'P2 (Interviewee)', 
+      source: 'Microphone',
+      description: 'Direct microphone input',
+      badge: 'P2'
+    }
+  });
+});
+
+// Default route redirects to main interface
+app.get('/', (req, res) => {
+  res.redirect('/main.html');
+});
+
 // Only start the server if this file is run directly (not required by tests)
 if (require.main === module) {
-  app.listen(PORT, () => {
+  server.listen(PORT, () => {
     console.log(`Server running at http://localhost:${PORT}`);
+    console.log(`WebSocket server running for audio mixer`);
     console.log(`Cache TTL: ${CACHE_TTL / 1000}s`);
   });
 }

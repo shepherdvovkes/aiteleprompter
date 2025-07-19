@@ -35,8 +35,13 @@ describe('Server Integration Tests', () => {
 
       expect(response.status).toBe(500);
       expect(response.body).toEqual({ 
-        error: 'OPENAI_API_KEY not set',
-        message: 'Server configuration error. Please contact administrator.'
+        error: 'OPENAI_API_KEY not configured',
+        message: 'Please set your OpenAI API key in the .env file. Get your key from https://platform.openai.com/api-keys',
+        instructions: [
+          '1. Edit the .env file in the project root',
+          '2. Replace "your_openai_api_key_here" with your actual OpenAI API key',
+          '3. Restart the server with: npm start'
+        ]
       });
     });
 
@@ -86,8 +91,13 @@ describe('Server Integration Tests', () => {
       // Without API key, should return 500
       expect(response.status).toBe(500);
       expect(response.body).toEqual({ 
-        error: 'OPENAI_API_KEY not set',
-        message: 'Server configuration error. Please contact administrator.'
+        error: 'OPENAI_API_KEY not configured',
+        message: 'Please set your OpenAI API key in the .env file. Get your key from https://platform.openai.com/api-keys',
+        instructions: [
+          '1. Edit the .env file in the project root',
+          '2. Replace "your_openai_api_key_here" with your actual OpenAI API key',
+          '3. Restart the server with: npm start'
+        ]
       });
     });
 
@@ -124,8 +134,13 @@ describe('Server Integration Tests', () => {
       // Should fail due to missing API key, not content type
       expect(response.status).toBe(500);
       expect(response.body).toEqual({ 
-        error: 'OPENAI_API_KEY not set',
-        message: 'Server configuration error. Please contact administrator.'
+        error: 'OPENAI_API_KEY not configured',
+        message: 'Please set your OpenAI API key in the .env file. Get your key from https://platform.openai.com/api-keys',
+        instructions: [
+          '1. Edit the .env file in the project root',
+          '2. Replace "your_openai_api_key_here" with your actual OpenAI API key',
+          '3. Restart the server with: npm start'
+        ]
       });
     });
 
@@ -137,8 +152,13 @@ describe('Server Integration Tests', () => {
       // Should fail due to missing API key
       expect(response.status).toBe(500);
       expect(response.body).toEqual({ 
-        error: 'OPENAI_API_KEY not set',
-        message: 'Server configuration error. Please contact administrator.'
+        error: 'OPENAI_API_KEY not configured',
+        message: 'Please set your OpenAI API key in the .env file. Get your key from https://platform.openai.com/api-keys',
+        instructions: [
+          '1. Edit the .env file in the project root',
+          '2. Replace "your_openai_api_key_here" with your actual OpenAI API key',
+          '3. Restart the server with: npm start'
+        ]
       });
     });
   });
@@ -166,8 +186,13 @@ describe('Server Integration Tests', () => {
       // Should fail due to missing API key first
       expect(response.status).toBe(500);
       expect(response.body).toEqual({ 
-        error: 'OPENAI_API_KEY not set',
-        message: 'Server configuration error. Please contact administrator.'
+        error: 'OPENAI_API_KEY not configured',
+        message: 'Please set your OpenAI API key in the .env file. Get your key from https://platform.openai.com/api-keys',
+        instructions: [
+          '1. Edit the .env file in the project root',
+          '2. Replace "your_openai_api_key_here" with your actual OpenAI API key',
+          '3. Restart the server with: npm start'
+        ]
       });
     });
 
