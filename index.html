@@ -89,6 +89,19 @@
                 <input type="text" id="modal-topic-input" class="w-full bg-gray-900 border border-gray-600 rounded-md p-2 text-gray-200 focus:ring-2 focus:ring-blue-500" placeholder="Solidity, finance ...">
                 <p class="text-xs text-gray-500 mt-2">Provide a general topic for more accurate answers.</p>
             </div>
+            <div>
+                <label for="modal-delay-input" class="block text-sm font-medium text-gray-300 mb-2">Question Processing Delay (seconds):</label>
+                <input type="number" id="modal-delay-input" min="1" max="10" step="0.5" class="w-full bg-gray-900 border border-gray-600 rounded-md p-2 text-gray-200 focus:ring-2 focus:ring-blue-500" placeholder="3">
+                <p class="text-xs text-gray-500 mt-2">Time to wait after last sentence before processing questions (1-10 seconds).</p>
+            </div>
+
+            <div class="border-t border-gray-600 pt-4">
+                <label class="flex items-center space-x-2">
+                    <input type="checkbox" id="demo-mode-checkbox" class="rounded border-gray-600 bg-gray-900 text-blue-600 focus:ring-blue-500">
+                    <span class="text-sm text-gray-300">Demo Mode (работает без API ключа)</span>
+                </label>
+                <p class="text-xs text-gray-500 mt-1">Включите для тестирования системы с предустановленными ответами</p>
+            </div>
 
             <div class="flex justify-end space-x-4">
                 <button id="modal-cancel-button" class="px-4 py-2 rounded-md text-gray-300 hover:bg-gray-700 transition-colors">Cancel</button>
@@ -98,6 +111,7 @@
     </div>
 
 <!-- Load JavaScript modules -->
+<script src="js/demo-mode.js"></script>
 <script src="js/audio-manager.js"></script>
 <script src="js/speech-recognition-manager.js"></script>
 <script src="js/ai-service.js"></script>
