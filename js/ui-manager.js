@@ -417,6 +417,54 @@ class UIManager {
 
         requestAnimationFrame(animation);
     }
+
+    // Safari and macOS compatibility helpers
+    isSafari() {
+        return /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    }
+
+    isMacOS() {
+        return navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    }
+
+    showBrowserCompatibilityWarning() {
+        if (this.isSafari() && this.isMacOS()) {
+            this.showInfoMessage('Safari on macOS detected. If you experience issues with the teleprompter, try using Chrome or Firefox for better compatibility.');
+        }
+    }
+
+    // Enhanced error message for API issues
+    showApiKeySetupInstructions() {
+        const instructions = `
+            <div class="text-left">
+                <p class="mb-2"><strong>API Key Setup Instructions:</strong></p>
+                <ol class="list-decimal list-inside space-y-1 text-sm">
+                    <li>Get your OpenAI API key from <a href="https://platform.openai.com/api-keys" target="_blank" class="text-blue-400 underline">platform.openai.com/api-keys</a></li>
+                    <li>Either:
+                        <ul class="list-disc list-inside ml-4 mt-1">
+                            <li>Set it in Settings (gear icon), OR</li>
+                            <li>Edit the .env file in the project root</li>
+                        </ul>
+                    </li>
+                    <li>Restart the server if you edited .env file</li>
+                </ol>
+            </div>
+        `;
+        
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        modal.innerHTML = `
+            <div class="bg-gray-800 p-6 rounded-lg max-w-md mx-4">
+                <h3 class="text-xl font-bold mb-4 text-white">API Key Required</h3>
+                ${instructions}
+                <button class="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded" onclick="this.closest('.fixed').remove()">
+                    Got it
+                </button>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+    }
 }
 
 // Export for use in other modules
