@@ -410,7 +410,11 @@
                 });
                 
                 this.clearLog.addEventListener('click', () => {
-                    this.audioLog.innerHTML = '<div class="text-gray-400">Лог очищен</div>';
+                    this.audioLog.textContent = '';
+                    const logMsg = document.createElement('div');
+                    logMsg.className = 'text-gray-400';
+                    logMsg.textContent = 'Лог очищен';
+                    this.audioLog.appendChild(logMsg);
                 });
             }
 
@@ -439,7 +443,16 @@
                 
                 const logEntry = document.createElement('div');
                 logEntry.className = `${typeColor[type] || typeColor.info} mb-1`;
-                logEntry.innerHTML = `<span class="text-gray-500">[${time}]</span> ${message}`;
+                
+                const timeSpan = document.createElement('span');
+                timeSpan.className = 'text-gray-500';
+                timeSpan.textContent = `[${time}]`;
+                
+                const messageSpan = document.createElement('span');
+                messageSpan.textContent = ` ${message}`;
+                
+                logEntry.appendChild(timeSpan);
+                logEntry.appendChild(messageSpan);
                 
                 this.audioLog.appendChild(logEntry);
                 this.audioLog.scrollTop = this.audioLog.scrollHeight;

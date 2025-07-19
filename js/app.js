@@ -834,9 +834,13 @@ class App {
         const container = document.querySelector(`[data-response-id="${responseId}"]`);
         if (!container) return;
         
-        // Update the response content
+        // Update the response content safely
         const responseEl = container.querySelector('.ai-response-content');
-        responseEl.innerHTML = this.formatResponse(newResponse);
+        // Clear existing content first
+        responseEl.textContent = '';
+        // Use safe DOM manipulation instead of innerHTML
+        const formattedContent = this.createSafeFormattedContent(newResponse);
+        responseEl.appendChild(formattedContent);
         
         // Re-render math and code
         this.renderMathAndCode(responseEl);
@@ -866,6 +870,110 @@ class App {
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/\*(.*?)\*/g, '<em>$1</em>')
             .replace(/\n/g, '<br>');
+    }
+
+    createSafeFormattedContent(text) {
+        // Create safe DOM elements instead of using innerHTML
+        const container = document.createElement('div');
+        
+        // Split text by code blocks
+        const parts = text.split(/```([\s\S]*?)```/);
+        
+        for (let i = 0; i < parts.length; i++) {
+            if (i % 2 === 0) {
+                // Regular text
+                const textPart = parts[i];
+                if (textPart.trim()) {
+                    // Process inline markdown safely
+                    const processedText = this.processInlineMarkdown(textPart);
+                    container.appendChild(processedText);
+                }
+            } else {
+                // Code block
+                const pre = document.createElement('pre');
+                const code = document.createElement('code');
+                code.className = 'hljs';
+                code.textContent = parts[i];
+                pre.appendChild(code);
+                container.appendChild(pre);
+            }
+        }
+        
+        return container;
+    }
+
+    processInlineMarkdown(text) {
+        const div = document.createElement('div');
+        
+        // Split by inline code first
+        const codeParts = text.split(/`([^`]+)`/);
+        
+        for (let i = 0; i < codeParts.length; i++) {
+            if (i % 2 === 0) {
+                // Regular text - process bold/italic
+                const textContent = codeParts[i];
+                const processed = this.processTextFormatting(textContent);
+                div.appendChild(processed);
+            } else {
+                // Inline code
+                const code = document.createElement('code');
+                code.textContent = codeParts[i];
+                div.appendChild(code);
+            }
+        }
+        
+        return div;
+    }
+
+    processTextFormatting(text) {
+        const span = document.createElement('span');
+        
+        // Process line breaks
+        const lines = text.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+            if (i > 0) {
+                span.appendChild(document.createElement('br'));
+            }
+            
+            const line = lines[i];
+            // Process bold and italic safely
+            const processed = this.processLineFormatting(line);
+            span.appendChild(processed);
+        }
+        
+        return span;
+    }
+
+    processLineFormatting(line) {
+        const span = document.createElement('span');
+        
+        // Simple bold/italic processing with DOM manipulation
+        const boldParts = line.split(/\*\*(.*?)\*\*/);
+        
+        for (let i = 0; i < boldParts.length; i++) {
+            if (i % 2 === 0) {
+                // Check for italic in non-bold text
+                const italicParts = boldParts[i].split(/\*(.*?)\*/);
+                for (let j = 0; j < italicParts.length; j++) {
+                    if (j % 2 === 0) {
+                        if (italicParts[j]) {
+                            span.appendChild(document.createTextNode(italicParts[j]));
+                        }
+                    } else {
+                        const em = document.createElement('em');
+                        em.textContent = italicParts[j];
+                        span.appendChild(em);
+                    }
+                }
+            } else {
+                // Bold text
+                const strong = document.createElement('strong');
+                strong.textContent = boldParts[i];
+                span.appendChild(strong);
+            }
+        }
+        
+        return span;
     }
 
     renderMathAndCode(element) {

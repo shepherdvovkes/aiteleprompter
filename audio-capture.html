@@ -277,28 +277,72 @@
             }
 
             renderDevices(devices) {
+                this.audioDevicesContainer.textContent = '';
+                
                 if (devices.length === 0) {
-                    this.audioDevicesContainer.innerHTML = '<div class="text-gray-400 text-sm">Устройства не найдены</div>';
+                    const noDevicesMsg = document.createElement('div');
+                    noDevicesMsg.className = 'text-gray-400 text-sm';
+                    noDevicesMsg.textContent = 'Устройства не найдены';
+                    this.audioDevicesContainer.appendChild(noDevicesMsg);
                     return;
                 }
 
-                this.audioDevicesContainer.innerHTML = devices.map(device => `
-                    <div class="device-item border border-gray-600 rounded-lg p-3">
-                        <div class="flex items-center justify-between">
-                            <div class="flex-1">
-                                <div class="font-medium">${device.label}</div>
-                                <div class="text-xs text-gray-400">${device.deviceId.substring(0, 20)}...</div>
-                            </div>
-                            <div class="flex items-center space-x-2">
-                                ${device.isVBCable ? '<span class="bg-red-500 text-xs px-2 py-1 rounded">VB Cable</span>' : ''}
-                                <button onclick="audioCaptureUI.testDevice('${device.deviceId}')" 
-                                        class="bg-blue-600 hover:bg-blue-700 text-xs px-2 py-1 rounded transition-colors">
-                                    Тест
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `).join('');
+                devices.forEach(device => {
+                    const deviceItem = this.createDeviceElement(device);
+                    this.audioDevicesContainer.appendChild(deviceItem);
+                });
+            }
+
+            createDeviceElement(device) {
+                const deviceDiv = document.createElement('div');
+                deviceDiv.className = 'device-item border border-gray-600 rounded-lg p-3';
+                
+                // Create main container
+                const flexContainer = document.createElement('div');
+                flexContainer.className = 'flex items-center justify-between';
+                
+                // Create device info section
+                const infoDiv = document.createElement('div');
+                infoDiv.className = 'flex-1';
+                
+                const labelDiv = document.createElement('div');
+                labelDiv.className = 'font-medium';
+                labelDiv.textContent = device.label;
+                
+                const idDiv = document.createElement('div');
+                idDiv.className = 'text-xs text-gray-400';
+                idDiv.textContent = device.deviceId.substring(0, 20) + '...';
+                
+                infoDiv.appendChild(labelDiv);
+                infoDiv.appendChild(idDiv);
+                
+                // Create controls section
+                const controlsDiv = document.createElement('div');
+                controlsDiv.className = 'flex items-center space-x-2';
+                
+                // Add VB Cable badge if needed
+                if (device.isVBCable) {
+                    const badge = document.createElement('span');
+                    badge.className = 'bg-red-500 text-xs px-2 py-1 rounded';
+                    badge.textContent = 'VB Cable';
+                    controlsDiv.appendChild(badge);
+                }
+                
+                // Add test button
+                const testBtn = document.createElement('button');
+                testBtn.className = 'bg-blue-600 hover:bg-blue-700 text-xs px-2 py-1 rounded transition-colors';
+                testBtn.textContent = 'Тест';
+                testBtn.addEventListener('click', () => {
+                    this.testDevice(device.deviceId);
+                });
+                controlsDiv.appendChild(testBtn);
+                
+                // Assemble the element
+                flexContainer.appendChild(infoDiv);
+                flexContainer.appendChild(controlsDiv);
+                deviceDiv.appendChild(flexContainer);
+                
+                return deviceDiv;
             }
 
             async testDevice(deviceId) {
@@ -457,7 +501,16 @@
                 
                 const logEntry = document.createElement('div');
                 logEntry.className = `${typeColors[type] || typeColors.info} mb-1`;
-                logEntry.innerHTML = `<span class="text-gray-500">[${time}]</span> ${message}`;
+                
+                const timeSpan = document.createElement('span');
+                timeSpan.className = 'text-gray-500';
+                timeSpan.textContent = `[${time}]`;
+                
+                const messageSpan = document.createElement('span');
+                messageSpan.textContent = ` ${message}`;
+                
+                logEntry.appendChild(timeSpan);
+                logEntry.appendChild(messageSpan);
                 
                 this.logContainer.appendChild(logEntry);
                 this.logContainer.scrollTop = this.logContainer.scrollHeight;
@@ -470,7 +523,11 @@
             }
 
             clearLog() {
-                this.logContainer.innerHTML = '<div class="text-gray-400">Лог очищен</div>';
+                this.logContainer.textContent = '';
+                const logMsg = document.createElement('div');
+                logMsg.className = 'text-gray-400';
+                logMsg.textContent = 'Лог очищен';
+                this.logContainer.appendChild(logMsg);
             }
         }
 
