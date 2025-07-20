@@ -118,17 +118,19 @@ class AudioCapture {
                 console.log(`${index + 1}. ${device.label} (ID: ${device.deviceId.substring(0, 20)}...)`);
             });
             
-            // Enhanced VB Cable detection with more patterns
+            // More specific VB Cable detection to avoid false positives
             const vbCableDevice = devices.find(device => 
                 device.kind === 'audioinput' && 
-                (device.label.toLowerCase().includes('cable') || 
-                 device.label.toLowerCase().includes('vb-audio') ||
+                (device.label.toLowerCase().includes('vb-audio') ||
                  device.label.toLowerCase().includes('vb cable') ||
                  device.label.toLowerCase().includes('vbcable') ||
                  device.label.toLowerCase().includes('virtual audio cable') ||
-                 device.label.toLowerCase().includes('cable output') ||
-                 device.label.toLowerCase().includes('cable input') ||
-                 device.label.toLowerCase().includes('virtual cable'))
+                 (device.label.toLowerCase().includes('cable') && 
+                  (device.label.toLowerCase().includes('virtual') || 
+                   device.label.toLowerCase().includes('vb') ||
+                   device.label.toLowerCase().includes('output') ||
+                   device.label.toLowerCase().includes('input'))) ||
+                 device.label.toLowerCase().includes('voicemeeter'))
             );
 
             if (vbCableDevice) {
@@ -186,22 +188,28 @@ class AudioCapture {
                 });
                 
                 // Try alternative approach - look for any device that might be VB Cable
+                // But be more conservative to avoid false positives
                 const possibleVBDevices = audioInputs.filter(device => 
-                    device.label.toLowerCase().includes('line') ||
-                    device.label.toLowerCase().includes('stereo') ||
-                    device.label.toLowerCase().includes('mix') ||
-                    device.deviceId !== 'default'
+                    (device.label.toLowerCase().includes('line') && 
+                     device.label.toLowerCase().includes('in')) ||
+                    device.label.toLowerCase().includes('stereo mix') ||
+                    (device.label.toLowerCase().includes('mix') &&
+                     !device.label.toLowerCase().includes('microphone')) ||
+                    (device.deviceId !== 'default' && 
+                     device.deviceId !== 'communications' &&
+                     !device.label.toLowerCase().includes('microphone') &&
+                     !device.label.toLowerCase().includes('mic'))
                 );
                 
                 if (possibleVBDevices.length > 0) {
-                    console.warn('🔍 Возможные VB Cable кандидаты:');
+                    console.warn('🔍 Возможные альтернативные устройства (НЕ VB Cable):');
                     possibleVBDevices.forEach((device, index) => {
                         console.warn(`  ${index + 1}. ${device.label} (ID: ${device.deviceId.substring(0, 20)}...)`);
                     });
                     
-                    // Try the first candidate
+                    // Try the first candidate but warn user it's not a real VB Cable
                     if (possibleVBDevices[0]) {
-                        console.log('🔄 Пробую первый кандидат:', possibleVBDevices[0].label);
+                        console.log('🔄 Пробую альтернативное устройство (НЕ VB Cable):', possibleVBDevices[0].label);
                         try {
                             const constraints = {
                                 audio: {
@@ -216,8 +224,12 @@ class AudioCapture {
                             
                             this.vbCableStream = await navigator.mediaDevices.getUserMedia(constraints);
                             this.setupAudioRecording(this.vbCableStream, 'P1');
-                            console.log('✅ Альтернативное устройство VB Cable подключено:', possibleVBDevices[0].label);
+                            console.log('⚠️ Альтернативное устройство подключено (НЕ VB Cable):', possibleVBDevices[0].label);
+                            console.warn('⚠️ ВНИМАНИЕ: Это не настоящий VB Cable! Функционал может быть ограничен.');
                             setTimeout(() => this.testVBCableAudio(), 2000);
+                            
+                            // Show warning notification
+                            window.showNotification && window.showNotification(`Подключено ${possibleVBDevices[0].label} (НЕ VB Cable)`, 'warning');
                         } catch (altError) {
                             console.warn('❌ Альтернативное устройство не подошло:', altError.message);
                         }
