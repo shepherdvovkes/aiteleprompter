@@ -468,12 +468,16 @@ PRIORITIZATION RULES:
 7. Personal/background questions are lower priority unless specifically asked
 
 From the provided context and questions, select:
-- ONE 'main_question': The most important/urgent question that should be answered first
-- ONE 'secondary_question': A follow-up or less urgent question (can be null)
+- ONE 'main_question': The most important/urgent question that should be answered first (MUST BE A STRING)
+- ONE 'secondary_question': A follow-up or less urgent question (can be null or string)
 
 If there are multiple technical questions, prioritize the most specific or actionable one.
 
-Return JSON with "main_question" and "secondary_question" fields. Set secondary_question to null if there's only one important question.
+IMPORTANT: Return ONLY the text of the questions, not objects. Example:
+{
+  "main_question": "Как вы реализуете кэширование в React приложении?",
+  "secondary_question": "Какие хуки вы используете для этого?"
+}
 
 CONTEXT: """${context}"""
 
@@ -487,9 +491,32 @@ QUESTIONS: ${JSON.stringify(questions)}`;
             }
             
             const result = await this.callOpenAI([{ role: 'user', content: prompt }], 'gpt-4o-mini', true);
+            
+            // Ensure we return strings, not objects
+            let mainQuestion = result.main_question || null;
+            let secondaryQuestion = result.secondary_question || null;
+            
+            // Convert objects to strings if needed
+            if (mainQuestion && typeof mainQuestion === 'object') {
+                mainQuestion = mainQuestion.text || mainQuestion.question || JSON.stringify(mainQuestion);
+            }
+            if (secondaryQuestion && typeof secondaryQuestion === 'object') {
+                secondaryQuestion = secondaryQuestion.text || secondaryQuestion.question || JSON.stringify(secondaryQuestion);
+            }
+            
+            // Additional validation to ensure strings
+            if (mainQuestion && typeof mainQuestion !== 'string') {
+                console.warn('main_question is not a string, converting:', typeof mainQuestion, mainQuestion);
+                mainQuestion = String(mainQuestion);
+            }
+            if (secondaryQuestion && typeof secondaryQuestion !== 'string') {
+                console.warn('secondary_question is not a string, converting:', typeof secondaryQuestion, secondaryQuestion);
+                secondaryQuestion = String(secondaryQuestion);
+            }
+            
             return {
-                main_question: result.main_question || null,
-                secondary_question: result.secondary_question || null
+                main_question: mainQuestion,
+                secondary_question: secondaryQuestion
             };
         } catch (error) {
             console.error('Question prioritization failed:', error);
