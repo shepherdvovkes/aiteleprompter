@@ -3,19 +3,23 @@
  * Captures audio from VB Cable (P1) and Microphone (P2)
  */
 
+/**
+ * Captures audio from VB Cable (P1) and Microphone (P2)
+ * Uses optimized device detection to avoid false positives
+ */
 class AudioCapture {
     constructor() {
+        this.sampleRate = 44100;
         this.isCapturing = false;
-        this.ws = null;
-        this.mediaRecorder = null;
-        this.audioContext = null;
-        this.micStream = null;
         this.vbCableStream = null;
-        this.recordingChunks = [];
+        this.microphoneStream = null;
+        this.audioContext = null;
+        this.processors = [];
+        this.mediaRecorders = [];
+        this.recordedChunks = [];
         
         // Audio processing parameters
         this.chunkDuration = 1000; // 1 second chunks
-        this.sampleRate = 44100;
         
         // Audio level analysis
         this.p1Analyser = null;
@@ -26,6 +30,67 @@ class AudioCapture {
         this.continuousMonitorInterval = null;
         
         this.initializeWebSocket();
+    }
+
+    /**
+     * Proper VB Cable device detection to avoid false positives with regular microphones
+     * Based on the working logic from audio-capture.html test page
+     */
+    isVBCableDevice(device) {
+        const label = device.label.toLowerCase();
+        let isVBCable = false;
+        
+        // Check specific VB Cable patterns (definitive matches)
+        if (label.includes('vb-audio')) {
+            console.log(`✅ VB Cable: Contains "vb-audio" - ${device.label}`);
+            return true;
+        }
+        if (label.includes('vb cable')) {
+            console.log(`✅ VB Cable: Contains "vb cable" - ${device.label}`);
+            return true;
+        }
+        if (label.includes('vbcable')) {
+            console.log(`✅ VB Cable: Contains "vbcable" - ${device.label}`);
+            return true;
+        }
+        if (label.includes('virtual audio cable')) {
+            console.log(`✅ VB Cable: Contains "virtual audio cable" - ${device.label}`);
+            return true;
+        }
+        if (label.includes('voicemeeter')) {
+            console.log(`✅ VB Cable: Contains "voicemeeter" - ${device.label}`);
+            return true;
+        }
+        
+        // Check cable with qualifiers (conditional matches)
+        if (label.includes('cable')) {
+            // First check if it's definitely NOT a VB Cable (microphone exclusions)
+            if (label.includes('microphone') || label.includes('mic')) {
+                console.log(`❌ NOT VB Cable: Contains "cable" but has "microphone/mic" - ${device.label}`);
+                return false;
+            }
+            
+            // Check for VB Cable qualifiers
+            if (label.includes('virtual')) {
+                console.log(`⚠️ Possible VB Cable: Contains "cable" + "virtual" - ${device.label}`);
+                return true;
+            } else if (label.includes('vb')) {
+                console.log(`⚠️ Possible VB Cable: Contains "cable" + "vb" - ${device.label}`);
+                return true;
+            } else if (label.includes('output')) {
+                console.log(`⚠️ Possible VB Cable: Contains "cable" + "output" - ${device.label}`);
+                return true;
+            } else if (label.includes('input')) {
+                console.log(`⚠️ Possible VB Cable: Contains "cable" + "input" - ${device.label}`);
+                return true;
+            } else {
+                console.log(`❌ NOT VB Cable: Contains "cable" but no VB qualifiers - ${device.label}`);
+                return false;
+            }
+        }
+        
+        console.log(`❌ NOT VB Cable: Standard device - ${device.label}`);
+        return false;
     }
 
     async initializeWebSocket() {
@@ -84,7 +149,7 @@ class AudioCapture {
     async startMicrophoneCapture() {
         try {
             // Request microphone access
-            this.micStream = await navigator.mediaDevices.getUserMedia({
+            this.microphoneStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     echoCancellation: false,
                     noiseSuppression: false,
@@ -94,7 +159,7 @@ class AudioCapture {
                 }
             });
 
-            this.setupAudioRecording(this.micStream, 'P2');
+            this.setupAudioRecording(this.microphoneStream, 'P2');
             console.log('Microphone capture started (P2)');
             
         } catch (error) {
@@ -118,19 +183,9 @@ class AudioCapture {
                 console.log(`${index + 1}. ${device.label} (ID: ${device.deviceId.substring(0, 20)}...)`);
             });
             
-            // More specific VB Cable detection to avoid false positives
+            // Use the proper VB Cable detection function to avoid false positives
             const vbCableDevice = devices.find(device => 
-                device.kind === 'audioinput' && 
-                (device.label.toLowerCase().includes('vb-audio') ||
-                 device.label.toLowerCase().includes('vb cable') ||
-                 device.label.toLowerCase().includes('vbcable') ||
-                 device.label.toLowerCase().includes('virtual audio cable') ||
-                 (device.label.toLowerCase().includes('cable') && 
-                  (device.label.toLowerCase().includes('virtual') || 
-                   device.label.toLowerCase().includes('vb') ||
-                   device.label.toLowerCase().includes('output') ||
-                   device.label.toLowerCase().includes('input'))) ||
-                 device.label.toLowerCase().includes('voicemeeter'))
+                device.kind === 'audioinput' && this.isVBCableDevice(device)
             );
 
             if (vbCableDevice) {
@@ -505,12 +560,12 @@ class AudioCapture {
         }
         
         // Stop microphone recording
-        if (this.micStream) {
-            this.micStream.getTracks().forEach(track => {
+        if (this.microphoneStream) {
+            this.microphoneStream.getTracks().forEach(track => {
                 track.stop();
                 console.log('Microphone track stopped');
             });
-            this.micStream = null;
+            this.microphoneStream = null;
         }
         
         // Stop media recorder
@@ -530,8 +585,7 @@ class AudioCapture {
             return audioInputs.map(device => ({
                 deviceId: device.deviceId,
                 label: device.label || 'Unknown Device',
-                isVBCable: device.label.toLowerCase().includes('cable') || 
-                          device.label.toLowerCase().includes('vb-audio')
+                isVBCable: this.isVBCableDevice(device)
             }));
         } catch (error) {
             console.error('Error getting audio devices:', error);
