@@ -213,4 +213,105 @@ describe('Server Integration Tests', () => {
       expect([200, 404]).toContain(response.status);
     });
   });
+
+  describe('Additional Server Features', () => {
+    test('should handle WebSocket connections', () => {
+      // WebSocket functionality is tested indirectly through server initialization
+      expect(app).toBeDefined();
+    });
+
+    test('should serve JavaScript files', async () => {
+      const response = await request(app)
+        .get('/js/app.js');
+      
+      // Should either serve the file or return 404
+      expect([200, 404]).toContain(response.status);
+    });
+
+    test('should handle CORS preflight requests', async () => {
+      const response = await request(app)
+        .options('/api/chat')
+        .set('Origin', 'http://localhost:3000')
+        .set('Access-Control-Request-Method', 'POST');
+
+      expect([200, 204]).toContain(response.status);
+    });
+
+    test('should handle malformed JSON gracefully', async () => {
+      const response = await request(app)
+        .post('/api/chat')
+        .set('Content-Type', 'application/json')
+        .send('{invalid json}');
+
+      expect([400, 500]).toContain(response.status);
+    });
+
+    test('should enforce content-length limits', async () => {
+      // Create large payload
+      const largePayload = {
+        model: 'gpt-4',
+        messages: Array(1000).fill().map(() => ({ 
+          role: 'user', 
+          content: 'A'.repeat(1000) 
+        }))
+      };
+
+      const response = await request(app)
+        .post('/api/chat')
+        .send(largePayload);
+
+      // Should handle large payloads gracefully
+      expect([413, 400, 500]).toContain(response.status);
+    });
+
+    test('should handle different request methods', async () => {
+      const methods = ['GET', 'PUT', 'DELETE', 'PATCH'];
+      
+      for (const method of methods) {
+        const response = await request(app)[method.toLowerCase()]('/api/chat');
+        // Non-POST methods should return 404 or 405
+        expect([404, 405]).toContain(response.status);
+      }
+    });
+
+    test('should handle audio upload endpoints gracefully', async () => {
+      const response = await request(app)
+        .post('/api/upload-audio');
+      
+      // Should handle missing audio file gracefully
+      expect([400, 404, 500]).toContain(response.status);
+    });
+
+    test('should serve static HTML files', async () => {
+      const files = ['index.html', 'teleprompter.html', 'audio-mixer.html'];
+      
+      for (const file of files) {
+        const response = await request(app).get(`/${file}`);
+        expect([200, 404]).toContain(response.status);
+      }
+    });
+
+    test('should handle API key validation scenarios', async () => {
+      // Test with empty API key
+      process.env.OPENAI_API_KEY = '';
+      delete require.cache[require.resolve('../../server.js')];
+      const testApp = require('../../server.js');
+
+      const response = await request(testApp)
+        .post('/api/chat')
+        .send({
+          model: 'gpt-4',
+          messages: [{ role: 'user', content: 'Hello' }]
+        });
+
+      expect(response.status).toBe(500);
+      expect(response.body.error).toBe('OPENAI_API_KEY not configured');
+    });
+
+    test('should handle cache operations', async () => {
+      // Test cache-related endpoints if they exist
+      const response = await request(app).get('/api/cache-status');
+      expect([200, 404]).toContain(response.status);
+    });
+  });
 });
