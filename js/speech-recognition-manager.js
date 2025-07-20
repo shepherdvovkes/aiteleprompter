@@ -211,12 +211,30 @@ class SpeechRecognitionManager {
                     // Показываем финальный результат сразу
                     this.onTranscriptUpdate?.(this.partialSentence, true);
                     
-                    if (/[.!?]\s*$/.test(this.partialSentence)) {
+                    // Проверяем на наличие множественных предложений
+                    const sentences = this.partialSentence.split(/([.!?]+)/);
+                    if (sentences.length > 2) {
+                        // Есть завершенные предложения с знаками препинания
+                        let completedSentences = '';
+                        let remainingText = '';
+                        
+                        for (let i = 0; i < sentences.length - 1; i += 2) {
+                            if (sentences[i].trim() && sentences[i + 1]) {
+                                const fullSentence = sentences[i] + sentences[i + 1];
+                                this.finalizeSentence(fullSentence.trim());
+                            }
+                        }
+                        
+                        // Оставшийся текст
+                        this.partialSentence = sentences[sentences.length - 1] || '';
+                        clearTimeout(this.sentencePauseTimer);
+                    } else if (/[.!?]\s*$/.test(this.partialSentence)) {
+                        // Одно предложение с знаком препинания
                         this.finalizeSentence(this.partialSentence);
                         this.partialSentence = '';
                         clearTimeout(this.sentencePauseTimer);
                     } else {
-                        // Даже без знаков препинания, показываем с интервалом
+                        // Без знаков препинания, ждем паузу
                         clearTimeout(this.sentencePauseTimer);
                         this.sentencePauseTimer = setTimeout(() => {
                             if (this.partialSentence.trim()) {
@@ -240,16 +258,38 @@ class SpeechRecognitionManager {
         
         // Дополнительное отображение для непрерывного потока
         if (this.partialSentence && this.partialSentence.length > 100) {
-            // Если накопилось много текста без финализации, показываем чанками
-            const chunks = this.partialSentence.match(/.{1,50}(\s|$)/g) || [this.partialSentence];
-            if (chunks.length > 1) {
-                const completeChunks = chunks.slice(0, -1);
-                completeChunks.forEach(chunk => {
-                    if (chunk.trim()) {
-                        this.finalizeSentence(chunk.trim());
+            // Проверяем на наличие множественных предложений в накопленном тексте
+            const potentialSentences = this.partialSentence.split(/([.!?]+)/);
+            if (potentialSentences.length > 2) {
+                // Есть завершенные предложения, обрабатываем их
+                let completedText = '';
+                let remainingText = '';
+                
+                for (let i = 0; i < potentialSentences.length - 1; i += 2) {
+                    if (potentialSentences[i].trim() && potentialSentences[i + 1]) {
+                        completedText += potentialSentences[i] + potentialSentences[i + 1];
                     }
-                });
-                this.partialSentence = chunks[chunks.length - 1] || '';
+                }
+                
+                // Оставшийся текст без знаков препинания
+                remainingText = potentialSentences[potentialSentences.length - 1] || '';
+                
+                if (completedText.trim()) {
+                    this.finalizeSentence(completedText.trim());
+                    this.partialSentence = remainingText.trim();
+                }
+            } else {
+                // Если накопилось много текста без финализации, показываем чанками
+                const chunks = this.partialSentence.match(/.{1,50}(\s|$)/g) || [this.partialSentence];
+                if (chunks.length > 1) {
+                    const completeChunks = chunks.slice(0, -1);
+                    completeChunks.forEach(chunk => {
+                        if (chunk.trim()) {
+                            this.finalizeSentence(chunk.trim());
+                        }
+                    });
+                    this.partialSentence = chunks[chunks.length - 1] || '';
+                }
             }
         }
         
@@ -367,9 +407,56 @@ class SpeechRecognitionManager {
     finalizeSentence(sentence) {
         if (sentence === this.lastLoggedSentence) return;
         
-        this.lastLoggedSentence = sentence;
-        this.onSentenceFinalized?.(sentence);
-        console.log('Finalized sentence:', sentence);
+        // Разбиваем текст на отдельные предложения по знакам препинания
+        const sentences = this.splitIntoSentences(sentence);
+        
+        for (const singleSentence of sentences) {
+            const trimmedSentence = singleSentence.trim();
+            if (trimmedSentence && trimmedSentence !== this.lastLoggedSentence) {
+                this.lastLoggedSentence = trimmedSentence;
+                this.onSentenceFinalized?.(trimmedSentence);
+                console.log('Finalized sentence:', trimmedSentence);
+            }
+        }
+    }
+
+    splitIntoSentences(text) {
+        if (!text || !text.trim()) return [];
+        
+        // Разделяем по знакам препинания и другим индикаторам конца предложения
+        const sentences = text
+            .split(/[.!?]+/)
+            .map(s => s.trim())
+            .filter(s => s.length > 0);
+        
+        // Если не было знаков препинания, но текст длинный, разбиваем по смысловым паузам
+        if (sentences.length === 1 && text.length > 100) {
+            const parts = text
+                .split(/\s*(?:,\s*и\s*|,\s*а\s*|,\s*но\s*|,\s*или\s*|;\s*|\s+и\s+|\s+а\s+|\s+но\s+|\s+или\s+)\s*/)
+                .map(s => s.trim())
+                .filter(s => s.length > 10); // Только достаточно длинные части
+            
+            if (parts.length > 1) {
+                return parts;
+            }
+        }
+        
+        // Если все еще одно длинное предложение, разбиваем по количеству слов
+        if (sentences.length === 1 && text.split(/\s+/).length > 20) {
+            const words = text.split(/\s+/);
+            const chunks = [];
+            
+            for (let i = 0; i < words.length; i += 15) {
+                const chunk = words.slice(i, i + 15).join(' ');
+                if (chunk.trim()) {
+                    chunks.push(chunk.trim());
+                }
+            }
+            
+            return chunks.length > 1 ? chunks : sentences;
+        }
+        
+        return sentences.length > 0 ? sentences : [text.trim()];
     }
 
     updateInterimDisplay() {
