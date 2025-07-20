@@ -78,6 +78,9 @@
                     <button id="diagnose-vbcable" class="bg-yellow-600 hover:bg-yellow-700 px-4 py-2 rounded-lg font-medium transition-colors">
                         🔍 Диагностика VB-Cable
                     </button>
+                    <button id="analyze-devices" class="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg font-medium transition-colors">
+                        🔬 Анализ устройств
+                    </button>
                     <button id="refresh-devices" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-medium transition-colors">
                         Обновить устройства
                     </button>
@@ -185,6 +188,7 @@
                 this.captureStatus = document.getElementById('capture-status');
                 
                 this.diagnoseVBCableBtn = document.getElementById('diagnose-vbcable');
+                this.analyzeDevicesBtn = document.getElementById('analyze-devices');
                 this.refreshDevicesBtn = document.getElementById('refresh-devices');
                 this.startCaptureBtn = document.getElementById('start-capture');
                 this.stopCaptureBtn = document.getElementById('stop-capture');
@@ -207,6 +211,7 @@
 
             bindEvents() {
                 this.diagnoseVBCableBtn.addEventListener('click', () => this.diagnoseVBCable());
+                this.analyzeDevicesBtn.addEventListener('click', () => this.analyzeDeviceNames());
                 this.refreshDevicesBtn.addEventListener('click', () => this.refreshDevices());
                 this.startCaptureBtn.addEventListener('click', () => this.startCapture());
                 this.stopCaptureBtn.addEventListener('click', () => this.stopCapture());
@@ -389,6 +394,106 @@
                 }
             }
 
+            async analyzeDeviceNames() {
+                this.log('🔬 Начинаю анализ имен аудио устройств...', 'info');
+                
+                try {
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    const audioInputs = devices.filter(device => device.kind === 'audioinput');
+                    
+                    this.log(`Найдено аудио устройств: ${audioInputs.length}`, 'info');
+                    this.log('', 'info'); // Empty line
+                    
+                    audioInputs.forEach((device, index) => {
+                        const label = device.label.toLowerCase();
+                        let analysis = [];
+                        let isVBCable = false;
+                        
+                        // Check specific VB Cable patterns
+                        if (label.includes('vb-audio')) {
+                            analysis.push('✅ Содержит "vb-audio" - явный VB Cable');
+                            isVBCable = true;
+                        }
+                        if (label.includes('vb cable')) {
+                            analysis.push('✅ Содержит "vb cable" - явный VB Cable');
+                            isVBCable = true;
+                        }
+                        if (label.includes('vbcable')) {
+                            analysis.push('✅ Содержит "vbcable" - явный VB Cable');
+                            isVBCable = true;
+                        }
+                        if (label.includes('virtual audio cable')) {
+                            analysis.push('✅ Содержит "virtual audio cable" - явный VB Cable');
+                            isVBCable = true;
+                        }
+                        if (label.includes('voicemeeter')) {
+                            analysis.push('✅ Содержит "voicemeeter" - VB Audio продукт');
+                            isVBCable = true;
+                        }
+                        
+                        // Check cable with qualifiers
+                        if (label.includes('cable') && !isVBCable) {
+                            if (label.includes('virtual')) {
+                                analysis.push('⚠️ Содержит "cable" + "virtual" - может быть VB Cable');
+                                isVBCable = true;
+                            } else if (label.includes('vb')) {
+                                analysis.push('⚠️ Содержит "cable" + "vb" - может быть VB Cable');
+                                isVBCable = true;
+                            } else if (label.includes('output')) {
+                                analysis.push('⚠️ Содержит "cable" + "output" - может быть VB Cable');
+                                isVBCable = true;
+                            } else if (label.includes('input')) {
+                                analysis.push('⚠️ Содержит "cable" + "input" - может быть VB Cable');
+                                isVBCable = true;
+                            } else {
+                                analysis.push('❌ Содержит "cable" но БЕЗ ключевых слов - НЕ VB Cable');
+                            }
+                        }
+                        
+                        // Check common microphone indicators
+                        if (label.includes('microphone') || label.includes('mic')) {
+                            analysis.push('🎤 Содержит "microphone/mic" - обычный микрофон');
+                        }
+                        if (label.includes('usb')) {
+                            analysis.push('🔌 Содержит "usb" - USB устройство');
+                        }
+                        if (label.includes('bluetooth')) {
+                            analysis.push('📱 Содержит "bluetooth" - Bluetooth устройство');
+                        }
+                        if (label.includes('realtek') || label.includes('conexant') || label.includes('intel')) {
+                            analysis.push('💻 Содержит название чипсета - встроенное аудио');
+                        }
+                        
+                        // Output analysis
+                        const deviceType = isVBCable ? 'VB-CABLE' : 'ОБЫЧНОЕ';
+                        const typeColor = isVBCable ? 'success' : 'info';
+                        
+                        this.log(`${index + 1}. "${device.label}" → ${deviceType}`, typeColor);
+                        
+                        if (analysis.length > 0) {
+                            analysis.forEach(item => {
+                                this.log(`   ${item}`, 'info');
+                            });
+                        } else {
+                            this.log('   ℹ️ Стандартное устройство без специальных признаков', 'info');
+                        }
+                        
+                        this.log('', 'info'); // Empty line
+                    });
+                    
+                    this.log('🔍 Пояснения:', 'info');
+                    this.log('✅ = Точно VB Cable или его аналог', 'success');
+                    this.log('⚠️ = Возможно VB Cable (нужна проверка)', 'warning');
+                    this.log('❌ = НЕ VB Cable (ложное срабатывание)', 'error');
+                    this.log('🎤/🔌/📱/💻 = Обычные аудио устройства', 'info');
+                    
+                    this.log('🏁 Анализ имен устройств завершен', 'success');
+                    
+                } catch (error) {
+                    this.log(`❌ Ошибка анализа: ${error.message}`, 'error');
+                }
+            }
+
             async diagnoseVBCable() {
                 this.log('🔍 Начинаю диагностику VB-Cable...', 'info');
                 
@@ -399,13 +504,18 @@
                     
                     this.log(`Найдено аудио устройств: ${audioInputs.length}`, 'info');
                     
-                    // Look for VB-Cable devices
+                    // Look for VB-Cable devices with more specific criteria to avoid false positives
                     const vbCableDevices = audioInputs.filter(device => 
-                        device.label.toLowerCase().includes('cable') || 
                         device.label.toLowerCase().includes('vb-audio') ||
                         device.label.toLowerCase().includes('vb cable') ||
                         device.label.toLowerCase().includes('vbcable') ||
-                        device.label.toLowerCase().includes('virtual audio cable')
+                        device.label.toLowerCase().includes('virtual audio cable') ||
+                        (device.label.toLowerCase().includes('cable') && 
+                         (device.label.toLowerCase().includes('virtual') || 
+                          device.label.toLowerCase().includes('vb') ||
+                          device.label.toLowerCase().includes('output') ||
+                          device.label.toLowerCase().includes('input'))) ||
+                        device.label.toLowerCase().includes('voicemeeter')
                     );
                     
                     if (vbCableDevices.length === 0) {
@@ -425,6 +535,19 @@
                     this.log(`✅ Найдено VB-Cable устройств: ${vbCableDevices.length}`, 'success');
                     vbCableDevices.forEach((device, index) => {
                         this.log(`${index + 1}. ${device.label}`, 'success');
+                        
+                        // Show why this device was identified as VB Cable
+                        const label = device.label.toLowerCase();
+                        let reason = '';
+                        if (label.includes('vb-audio')) reason = 'содержит "vb-audio"';
+                        else if (label.includes('vb cable')) reason = 'содержит "vb cable"';
+                        else if (label.includes('vbcable')) reason = 'содержит "vbcable"';
+                        else if (label.includes('virtual audio cable')) reason = 'содержит "virtual audio cable"';
+                        else if (label.includes('voicemeeter')) reason = 'содержит "voicemeeter"';
+                        else if (label.includes('cable') && (label.includes('virtual') || label.includes('vb') || label.includes('output') || label.includes('input'))) {
+                            reason = 'содержит "cable" + ключевые слова';
+                        }
+                        this.log(`   ↳ Определено как VB Cable, потому что ${reason}`, 'info');
                     });
                     
                     // Test each VB-Cable device
