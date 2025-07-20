@@ -16,12 +16,14 @@ class SpeechRecognitionManager {
         this.SENTENCE_PAUSE_THRESHOLD = 2000;
         this.PERIODIC_THRESHOLD = 20000;
         this.RECONNECT_DELAY = 1000; // Delay before automatic reconnection
+        this.FORCE_DISPLAY_INTERVAL = 3000; // Force display every 3 seconds for VB Cable
         
         // Timers
         this.silenceTimer = null;
         this.chunkTimer = null;
         this.sentencePauseTimer = null;
         this.periodicTimer = null;
+        this.forceDisplayTimer = null;
         
         // State
         this.partialSentence = '';
@@ -206,11 +208,15 @@ class SpeechRecognitionManager {
                     finalTranscript += transcriptPart.trim();
                     this.partialSentence += (this.partialSentence ? ' ' : '') + transcriptPart.trim();
                     
+                    // Показываем финальный результат сразу
+                    this.onTranscriptUpdate?.(this.partialSentence, true);
+                    
                     if (/[.!?]\s*$/.test(this.partialSentence)) {
                         this.finalizeSentence(this.partialSentence);
                         this.partialSentence = '';
                         clearTimeout(this.sentencePauseTimer);
                     } else {
+                        // Даже без знаков препинания, показываем с интервалом
                         clearTimeout(this.sentencePauseTimer);
                         this.sentencePauseTimer = setTimeout(() => {
                             if (this.partialSentence.trim()) {
@@ -222,10 +228,31 @@ class SpeechRecognitionManager {
                 }
             } else {
                 interimTranscript += transcriptPart;
+                // Показываем промежуточные результаты для лучшей обратной связи
+                if (interimTranscript.trim()) {
+                    const fullInterim = this.partialSentence + (this.partialSentence ? ' ' : '') + interimTranscript;
+                    this.onTranscriptUpdate?.(fullInterim, false);
+                }
             }
         }
         
         this.interimText = interimTranscript;
+        
+        // Дополнительное отображение для непрерывного потока
+        if (this.partialSentence && this.partialSentence.length > 100) {
+            // Если накопилось много текста без финализации, показываем чанками
+            const chunks = this.partialSentence.match(/.{1,50}(\s|$)/g) || [this.partialSentence];
+            if (chunks.length > 1) {
+                const completeChunks = chunks.slice(0, -1);
+                completeChunks.forEach(chunk => {
+                    if (chunk.trim()) {
+                        this.finalizeSentence(chunk.trim());
+                    }
+                });
+                this.partialSentence = chunks[chunks.length - 1] || '';
+            }
+        }
+        
         this.updateInterimDisplay();
         
         if (finalTranscript) {
@@ -353,28 +380,55 @@ class SpeechRecognitionManager {
     startTimers() {
         this.clearAllTimers();
         
+        this.chunkTimer = setInterval(() => {
+            console.log('Chunk timer triggered');
+            if (this.partialSentence) {
+                this.finalizeSentence(this.partialSentence);
+                this.partialSentence = '';
+            }
+        }, this.CHUNK_DURATION);
+
         this.periodicTimer = setInterval(() => {
-            this.scheduleAnalysis();
+            console.log('Periodic timer triggered');
+            if (this.partialSentence) {
+                this.finalizeSentence(this.partialSentence);
+                this.partialSentence = '';
+            }
         }, this.PERIODIC_THRESHOLD);
         
-        this.chunkTimer = setInterval(() => {
-            this.shouldRestart = true;
-            this.recognition.stop();
-        }, this.CHUNK_DURATION);
+        // Добавляем таймер для принудительного отображения
+        this.forceDisplayTimer = setInterval(() => {
+            if (this.partialSentence && this.partialSentence.trim().length > 20) {
+                console.log('Force display timer triggered, showing accumulated text:', this.partialSentence);
+                this.onTranscriptUpdate?.(this.partialSentence, true);
+                this.finalizeSentence(this.partialSentence);
+                this.partialSentence = '';
+            }
+        }, this.FORCE_DISPLAY_INTERVAL);
     }
 
     clearAllTimers() {
-        const timers = [
-            'silenceTimer', 'chunkTimer', 'sentencePauseTimer', 'periodicTimer'
-        ];
-        
-        timers.forEach(timer => {
-            if (this[timer]) {
-                clearTimeout(this[timer]);
-                clearInterval(this[timer]);
-                this[timer] = null;
-            }
-        });
+        console.log('Clearing all timers');
+        if (this.silenceTimer) {
+            clearTimeout(this.silenceTimer);
+            this.silenceTimer = null;
+        }
+        if (this.chunkTimer) {
+            clearInterval(this.chunkTimer);
+            this.chunkTimer = null;
+        }
+        if (this.sentencePauseTimer) {
+            clearTimeout(this.sentencePauseTimer);
+            this.sentencePauseTimer = null;
+        }
+        if (this.periodicTimer) {
+            clearInterval(this.periodicTimer);
+            this.periodicTimer = null;
+        }
+        if (this.forceDisplayTimer) {
+            clearInterval(this.forceDisplayTimer);
+            this.forceDisplayTimer = null;
+        }
     }
 
     scheduleAnalysis() {
